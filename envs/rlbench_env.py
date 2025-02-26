@@ -59,21 +59,21 @@ class VoxPoserRLBench():
         if self.visualizer is not None:
             self.visualizer.update_bounds(self.workspace_bounds_min, self.workspace_bounds_max)
         #self.camera_names = ['front', 'left_shoulder', 'right_shoulder', 'overhead', 'wrist']
-        self.camera_names = ['front', 'overhead']
+        self.camera_names = ['front', 'wrist']
         # calculate lookat vector for all cameras (for normal estimation)
         name2cam = {
             'front': self.rlbench_env._scene._cam_front,
             #'left_shoulder': self.rlbench_env._scene._cam_over_shoulder_left,
             #'right_shoulder': self.rlbench_env._scene._cam_over_shoulder_right,
-            'overhead': self.rlbench_env._scene._cam_overhead,
-            #'wrist': self.rlbench_env._scene._cam_wrist,
+            #'overhead': self.rlbench_env._scene._cam_overhead,
+            'wrist': self.rlbench_env._scene._cam_wrist,
         }
         name2cam_mask = {
             'front': self.rlbench_env._scene._cam_front_mask,
-            #'left_shoulder': self.rlbench_env._scene._cam_over_shoulder_left,
-            #'right_shoulder': self.rlbench_env._scene._cam_over_shoulder_right,
-            'overhead': self.rlbench_env._scene._cam_overhead_mask,
-            #'wrist': self.rlbench_env._scene._cam_wrist,
+            #'left_shoulder': self.rlbench_env._scene._cam_over_shoulder_left_mask,
+            #'right_shoulder': self.rlbench_env._scene._cam_over_shoulder_right_mask,
+            #'overhead': self.rlbench_env._scene._cam_overhead_mask,
+            'wrist': self.rlbench_env._scene._cam_wrist_mask,
         }
         self.name2cam = name2cam
         self.name2cam_mask = name2cam_mask
@@ -138,9 +138,9 @@ class VoxPoserRLBench():
                     self.name2ids[exposed_name].append(child.get_handle())
                     self.id2name[child.get_handle()] = exposed_name
 
-        '''    
-        def get_3d_obs_by_name(self, query_name):
-        """
+        
+    def get_3d_obs_by_name(self, query_name):
+        '''
         Retrieves 3D point cloud observations and normals of an object by its name.
 
         Args:
@@ -148,7 +148,7 @@ class VoxPoserRLBench():
 
         Returns:
             tuple: A tuple containing object points and object normals.
-        """
+        '''
         assert query_name in self.name2ids, f"Unknown object name: {query_name}"
 
         obj_ids = self.name2ids[query_name]
@@ -185,7 +185,7 @@ class VoxPoserRLBench():
         obj_points = np.asarray(pcd_downsampled.points)
         obj_normals = np.asarray(pcd_downsampled.normals)
         return obj_points, obj_normals
-        '''
+        
 
     def get_scene_3d_obs(self, ignore_robot=False, ignore_grasped_obj=False):
         """

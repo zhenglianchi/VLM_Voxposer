@@ -1,15 +1,16 @@
 from LMP import LMP
 from utils import get_clock_time, normalize_vector, pointat2quat, bcolors, Observation, VoxelIndexingWrapper
 import numpy as np
+from scipy.spatial.transform import Rotation as R
 from planners import PathPlanner
 import time
 from scipy.ndimage import distance_transform_edt
 import transforms3d
 from controllers import Controller
 import open3d as o3d
-from VLM_demo import get_obj_bboxs_list,get_entitites,get_bboxs_list
+from world_state import get_world_mask_list, write_state, read_state, get_state
 from PIL import Image
-
+from transforms3d.quaternions import axangle2quat
 
 
 # creating some aliases for end effector and table in case LLMs refer to them differently (but rarely this happens)
@@ -58,85 +59,33 @@ class LMP_interface():
     return rgb, depth, pcd
 
 
-  def get_3d_obs_by_name(self, query_name):
-    """
-    Retrieves 3D point cloud observations and normals of an object by its name.
+  def get_obs(self, obj_pc,obj_normal, label):
+    obs_dict = dict()
+    voxel_map = self._points_to_voxel_map(obj_pc)
+    aabb_min = self._world_to_voxel(np.min(obj_pc, axis=0))
+    aabb_max = self._world_to_voxel(np.max(obj_pc, axis=0))
+    obs_dict['occupancy_map'] = voxel_map  # in voxel frame
+    obs_dict['name'] = label
+    obs_dict['position'] = self._world_to_voxel(np.mean(obj_pc, axis=0))  # in voxel frame
+    obs_dict['aabb'] = np.array([aabb_min, aabb_max])  # in voxel frame
+    obs_dict['_position_world'] = np.mean(obj_pc, axis=0)  # in world frame
+    obs_dict['_point_cloud_world'] = obj_pc  # in world frame
+    obs_dict['normal'] = normalize_vector(obj_normal.mean(axis=0))
 
-    Args:
-        query_name (str): The name of the object to query.
+    object_obs = Observation(obs_dict)
+    return object_obs
 
-    Returns:
-        tuple: A tuple containing object points and object normals.
-    """
-    assert query_name in self._env.name2ids, f"Unknown object name: {query_name}"
-    obj_ids = self._env.name2ids[query_name]
-    # gather points and masks from all cameras
-    # 取出的值全部是相对于世界坐标系下的坐标
-    points, masks, normals = [], [], []
-
-    for cam in self._env.camera_names:
-        cam_handle = self._env.name2cam[cam]
-
-        rgb, depth, pcd = self.get_rgb_depth(cam_handle, True, True, True)
-
-        points.append(pcd.reshape(-1, 3))
-
-        image = Image.fromarray(np.array(rgb))
-
-        image.save("tmp/tmp.jpeg")
-        image_path = "tmp/tmp.jpeg"
-
-        obj = query_name
-        bbox = get_obj_bboxs_list(image_path,obj)
-        entities = get_entitites(image_path, bbox)
-
-        mask = entities[0]["mask"]
-
-        h, w = mask.shape[-2:]
-        mask = mask.astype(np.uint8)
-        mask_image =  mask.reshape(h, w)
-
-        masks.append(mask_image.reshape(-1))
-        # estimate normals using o3d
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(points[-1])
-        pcd.estimate_normals()
-        cam_normals = np.asarray(pcd.normals)
-        # use lookat vector to adjust normal vectors
-        flip_indices = np.dot(cam_normals, self._env.lookat_vectors[cam]) > 0
-        cam_normals[flip_indices] *= -1
-        normals.append(cam_normals)
-    points = np.concatenate(points, axis=0)
-    masks = np.concatenate(masks, axis=0)
-    normals = np.concatenate(normals, axis=0)
-
-    obj_points = points[np.isin(masks, 1)]
-    if len(obj_points) == 0:
-        raise ValueError(f"Object {query_name} not found in the scene")
-    obj_normals = normals[np.isin(masks, 1)]
-    # voxel downsample using o3d
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(obj_points)
-    pcd.normals = o3d.utility.Vector3dVector(obj_normals)
-    pcd_downsampled = pcd.voxel_down_sample(voxel_size=0.001)
-    obj_points = np.asarray(pcd_downsampled.points)
-    obj_normals = np.asarray(pcd_downsampled.normals)
-    return obj_points, obj_normals
-
-  def get_ee_pos(self):
-    return self._world_to_voxel(self._env.get_ee_pos())
-  
-  def detect(self, obj_name):
-    """return an observation dict containing useful information about the object"""
-    if obj_name.lower() in EE_ALIAS:
+  def get_ee_obs(self):
       # 获取末端姿态
       obs_dict = dict()
-      obs_dict['name'] = obj_name
+      obs_dict['name'] = "gripper"
       obs_dict['position'] = self.get_ee_pos()
       obs_dict['aabb'] = np.array([self.get_ee_pos(), self.get_ee_pos()])
       obs_dict['_position_world'] = self._env.get_ee_pos()
+      object_obs = Observation(obs_dict)
+      return object_obs
 
-    elif obj_name.lower() in TABLE_ALIAS:
+  def get_table_obs(self):
       offset_percentage = 0.1
       x_min = self._env.workspace_bounds_min[0] + offset_percentage * (self._env.workspace_bounds_max[0] - self._env.workspace_bounds_min[0])
       x_max = self._env.workspace_bounds_max[0] - offset_percentage * (self._env.workspace_bounds_max[0] - self._env.workspace_bounds_min[0])
@@ -146,29 +95,103 @@ class LMP_interface():
       table_min_world = np.array([x_min, y_min, 0])
       table_center = (table_max_world + table_min_world) / 2
       obs_dict = dict()
-      obs_dict['name'] = obj_name
+      obs_dict['name'] = "workspace"
       obs_dict['position'] = self._world_to_voxel(table_center)
       obs_dict['_position_world'] = table_center
       obs_dict['normal'] = np.array([0, 0, 1])
       obs_dict['aabb'] = np.array([self._world_to_voxel(table_min_world), self._world_to_voxel(table_max_world)])
-    
-    else:
-      obs_dict = dict()
-      obj_pc, obj_normal = self.get_3d_obs_by_name(obj_name)
-      #obj_pc, obj_normal = self._env.get_3d_obs_by_name(obj_name)
-      voxel_map = self._points_to_voxel_map(obj_pc)
-      aabb_min = self._world_to_voxel(np.min(obj_pc, axis=0))
-      aabb_max = self._world_to_voxel(np.max(obj_pc, axis=0))
-      obs_dict['occupancy_map'] = voxel_map  # in voxel frame
-      obs_dict['name'] = obj_name
-      obs_dict['position'] = self._world_to_voxel(np.mean(obj_pc, axis=0))  # in voxel frame
-      obs_dict['aabb'] = np.array([aabb_min, aabb_max])  # in voxel frame
-      obs_dict['_position_world'] = np.mean(obj_pc, axis=0)  # in world frame
-      obs_dict['_point_cloud_world'] = obj_pc  # in world frame
-      obs_dict['normal'] = normalize_vector(obj_normal.mean(axis=0))
 
-    object_obs = Observation(obs_dict)
-    return object_obs
+      object_obs = Observation(obs_dict)
+      return object_obs
+
+  def update_state(self, instruction):
+      cam = self._env.name2cam["wrist"]
+      rgb, depth, pcd_ = self.get_rgb_depth(cam, get_rgb=True, get_depth=True, get_pcd=True)
+
+      image = Image.fromarray(np.array(rgb))
+      image_path = "tmp/rgb.jpeg"
+      image.save(image_path)
+
+      objects = self._env.get_object_names()
+      output_image_path, entities = get_world_mask_list(image_path,objects)
+
+      state = get_state(output_image_path, instruction, objects)
+
+      for item in entities:
+          points, masks, normals = [], [], []
+          points.append(pcd_.reshape(-1, 3))
+          mask = item['mask']
+          label = item['label']
+          h, w = mask.shape[-2:]
+          mask = mask.astype(np.uint8)
+          mask =  mask.reshape(h, w).reshape(-1)
+          masks.append(mask)
+
+          # estimate normals using o3d
+          pcd = o3d.geometry.PointCloud()
+          pcd.points = o3d.utility.Vector3dVector(points[-1])
+          pcd.estimate_normals()
+          cam_normals = np.asarray(pcd.normals)
+          # use lookat vector to adjust normal vectors
+          flip_indices = np.dot(cam_normals, self._env.lookat_vectors["wrist"]) > 0
+          cam_normals[flip_indices] *= -1
+          normals.append(cam_normals)
+
+          points = np.array(points)
+          masks = np.array(masks)
+          normals = np.array(normals)
+
+          obj_points = points[np.isin(masks, 1)]
+          if len(obj_points) == 0:
+              raise ValueError(f"Scene not any object!")
+          obj_normals = normals[np.isin(masks, 1)]
+          # voxel downsample using o3d
+          pcd = o3d.geometry.PointCloud()
+          pcd.points = o3d.utility.Vector3dVector(obj_points)
+          pcd.normals = o3d.utility.Vector3dVector(obj_normals)
+          pcd_downsampled = pcd.voxel_down_sample(voxel_size=0.001)
+          obj_points = np.asarray(pcd_downsampled.points)
+          obj_normals = np.asarray(pcd_downsampled.normals)
+
+          state[label]["obs"] = self.get_obs(obj_points, obj_normals, label)
+
+      state['gripper'] = self.get_ee_obs()
+      state['workspace'] = self.get_table_obs()
+
+      # 将state保存为JSON文件
+      state_json_path = f"tmp/state_wrist.json"
+      write_state(state_json_path,state)
+      return state_json_path
+
+  def get_state(self, state_json_path):
+      state = read_state(state_json_path)
+      return state
+  
+  def vec2quat(self, vec):
+    """
+    将向量转换为四元数。
+    
+    参数:
+    vector (np.array): 一个三维向量，表示方向。
+    
+    返回:
+    np.array: 表示旋转的四元数。
+    """
+    v = v / np.linalg.norm(v)
+
+    # 目标方向是z轴
+    target = np.array([0, 0, 1])
+
+    # 计算旋转
+    # 使用Rotation.from_rotvec来获取从z轴到v的旋转
+    rotation = R.align_vectors([v], [target])[0]
+
+    # 获取四元数
+    quat = rotation.as_quat()  # 返回四元数 [x, y, z, w] 格式
+    return quat
+
+  def get_ee_pos(self):
+    return self._world_to_voxel(self._env.get_ee_pos())
   
   def execute(self, movable_obs_func, affordance_map=None, avoidance_map=None, rotation_map=None,
               velocity_map=None, gripper_map=None):

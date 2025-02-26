@@ -1,0 +1,115 @@
+Task Description:
+Please generate a piece of code based on the provided image. The code should implement the following functionalities:
+
+    Extract key information from the image and convert it into executable logic.
+    The code should include the following variables and functions, as described below:
+
+Variable Descriptions:
+
+    The variable obs_dict = state["object"]["obs"] contains the following key-value pairs:
+        obs_dict['occupancy_map'] # The voxel_map represents an occupancy map in the voxel frame
+        obs_dict['name'] # object name
+        obs_dict['position'] # The position represents the center of the object in the voxel frame
+        obs_dict['aabb'] # The aabb represents minimum and maximum coordinates in the voxel frame
+        obs_dict['_position_world'] # The _position_world represents the center of the object in the world frame
+        obs_dict['_point_cloud_world'] # The _point_cloud_world represents its original point cloud map in the world frame
+        obs_dict['normal'] # The normal represents the mean surface normal of the object in the world frame
+
+Function Descriptions:
+
+    Function execute(movable_obs_func, affordance_map=None, avoidance_map=None, rotation_map=None,velocity_map=None, gripper_map=None): Used to Plan the path and run.
+    Function update_state(instruction): Used to get current state of the world, return the state dictionary path.
+    Function get_state(state_json_path): Used to get current state of the world, return the state dictionary.
+    Function reset_to_default_pose(): Used to reset the robot to its default pose.
+    Function get_empty_affordance_map(): Used to get the empty affordance map.
+    Function get_empty_avoidance_map(): Used to get the empty avoidance map.
+    Function get_empty_rotation_map(): Used to get the empty rotation map.
+    Function get_empty_velocity_map(): Used to get the empty velocity map.
+    Function get_empty_gripper_map(): Used to get the empty gripper map.
+    Function cm2index(cm, direction): Used to convert centimeters to voxel indices.
+    Function set_voxel_by_radius(voxel_map, voxel_xyz, radius_cm=0, value=1): given a 3D np array, set the value of the voxel at voxel_xyz to value. If radius is specified, set the value of all voxels within the radius to value.
+    Function vec2quat(vec): Used to convert a normal vector to a quaternion.
+
+Some external library APIs:
+    fixed_vars = {
+        'np': np,
+        'euler2quat': transforms3d.euler.euler2quat,
+        'quat2euler': transforms3d.euler.quat2euler,
+        'qinverse': transforms3d.quaternions.qinverse,
+        'qmult': transforms3d.quaternions.qmult,
+    }
+
+Example1 Function Calls:
+'''python
+# Query : place the blue block on the yellow block, and avoid the mug at all time.
+# action1 : grasp the blue block at a quarter of the speed while keeping at least 15cm away from the mug
+
+json_path = update_state('grasp the blue block at a quarter of the speed while keeping at least 15cm away from the mug')
+state = get_state(json_path)
+movable = state["gripper"]["obs"]
+blue_block = state["blue block"]["obs"]
+
+affordance_map = get_empty_affordance_map()
+x, y, z = blue_block.position
+affordance_map[x, y, z] = 1
+
+velocity_map = get_empty_velocity_map()
+velocity_map[:] = 0.25
+
+gripper_map = get_empty_gripper_map()
+# open everywhere
+gripper_map[:, :, :] = 1
+# close when 1cm around the blue block
+set_voxel_by_radius(gripper_map, blue_block.position, radius_cm=1, value=0)
+
+execute(movable, affordance_map=affordance_map, velocity_map=velocity_map, gripper_map=gripper_map)
+
+# action2 : back to default pose
+reset_to_default_pose()
+
+# action3 : move to 5cm on top of the yellow block while keeping at least 15cm away from the mug
+movable = state["gripper"]["obs"]
+mug = state["mug"]["obs"]
+yellow_block = state["yellow block"]["obs"]
+
+affordance_map = get_empty_affordance_map()
+(min_x, min_y, min_z), (max_x, max_y, max_z) = yellow_block.aabb
+center_x, center_y, center_z = yellow_block.position
+# 5cm above so we add to z-axis
+x = center_x
+y = center_y
+z = max_z + cm2index(5, 'z')
+affordance_map[x, y, z] = 1
+
+avoidance_map = get_empty_avoidance_map()
+set_voxel_by_radius(avoidance_map, mug.position, radius_cm=15, value=1)
+
+execute(movable, affordance_map=affordance_map, avoidance_map=avoidance_map, velocity_map=velocity_map)
+
+# action4 : open gripper
+gripper_map = get_empty_gripper_map()
+# open everywhere
+gripper_map[:, :, :] = 1
+
+# action5 : back to default pose
+reset_to_default_pose()
+'''
+
+
+Example2 Function Calls:
+'''python
+# Query : Take the steak out of the grill and put it flat on the plate.
+# action1 : grasp the steak
+movable = state["gripper"]["obs"]
+affordance_map = get_affordance_map('a point at the center of the bottom drawer handle')
+velocity_map = get_velocity_map('0.5x speed')
+rotation_map = get_rotation_map('face the bottom drawer handle')
+gripper_map = get_gripper_map('open everywhere except 1cm around the bottom drawer handle')
+execute(movable, affordance_map=affordance_map, velocity_map=velocity_map, rotation_map=rotation_map, gripper_map=gripper_map)
+
+# action2 ("back to default pose")
+# action3 ("rotate the gripper to be 45 degrees slanted relative to the plate")
+# action4 ("move to 10cm on top of the plate")
+# action5 ("open gripper")
+# action6 ("back to default pose")
+'''

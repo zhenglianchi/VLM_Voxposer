@@ -1,4 +1,4 @@
-env_name: rlbench
+env_name: vlm_rlbench
 
 planner:
   stop_threshold: 0.001
@@ -59,21 +59,6 @@ lmp_config:
       maintain_session: False
       include_context: False
       has_return: False
-      return_val_name: ret_val
-      load_cache: True
-    parse_query_obj:
-      prompt_fname: parse_query_obj_prompt
-      model: qwen2.5-72b-instruct
-      max_tokens: 512
-      temperature: 0
-      query_prefix: '# Query: '
-      query_suffix: '.'
-      stop:
-        - '# Query: '
-        - 'objects ='
-      maintain_session: False
-      include_context: True
-      has_return: True
       return_val_name: ret_val
       load_cache: True
     get_affordance_map:

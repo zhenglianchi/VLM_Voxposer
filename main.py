@@ -24,8 +24,8 @@ voxposer_ui = lmps['plan_ui']
 
 # below are the tasks that have object names added to the "task_object_names.json" file
 # uncomment one to use
-#env.load_task(tasks.PutRubbishInBin)
-env.load_task(tasks.LampOff)
+env.load_task(tasks.PutRubbishInBin)
+#env.load_task(tasks.LampOff)
 #env.load_task(tasks.OpenWineBottle)
 #env.load_task(tasks.PushButton)
 #env.load_task(tasks.TakeOffWeighingScales)
@@ -43,4 +43,5 @@ instruction = np.random.choice(descriptions)
 
 # run the high level plan with the LMP 
 voxposer_ui(instruction)
+
 

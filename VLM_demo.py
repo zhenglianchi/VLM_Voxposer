@@ -129,7 +129,7 @@ def get_obj_bboxs_list(image_path,obj):
 
     return bbox_list_orignal
 
-def get_world_bboxs_list(image_path):
+def get_world_bboxs_list(image_path,instruction):
 
     client = OpenAI(
         api_key="sk-df55df287b2c420285feb77137467576",
@@ -141,7 +141,7 @@ def get_world_bboxs_list(image_path):
     completion = client.chat.completions.create(
         model="qwen2.5-vl-72b-instruct",  
         messages=[{"role": "user","content": [
-                {"type": "text","text": "This is a robotic arm operation scene. Detect all objects in the image and return their locations in the form of coordinates, don't give up any information about the details. The format of output should be like {“bbox”: [x1, y1, x2, y2], “label”: the name of this object in English} not {“bbox_2d”: [x1, y1, x2, y2], “label”: the name of this object in Chinese}"},
+                {"type": "text","text": f"This is a robotic arm operation scene, you need to detect {instruction}. Detect all objects in the image and return their locations in the form of coordinates, don't give up any information about the details. The format of output should be like" +"{“bbox”: [x1, y1, x2, y2], “label”: the name of this object in English.} not {“bbox_2d”: [x1, y1, x2, y2], “label”: the name of this object in Chinese}"},
                 {"type": "image_url",
                 "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}, 
                 }
@@ -173,6 +173,68 @@ def get_world_bboxs_list(image_path):
     image.show()'''
 
     return bbox_list_orignal
+
+
+def get_multi_image_world_bboxs_list(image_path1,image_path2,instruction):
+
+    client = OpenAI(
+        api_key="sk-df55df287b2c420285feb77137467576",
+        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+    )
+
+    base64_image1 = encode_image(image_path1)
+    base64_image2 = encode_image(image_path2)
+
+
+    completion = client.chat.completions.create(
+        model="qwen2.5-vl-72b-instruct",  
+        messages=[{"role": "user","content": [
+                {"type": "text","text": f"This is a robotic arm operation scene, you need to detect {instruction}. These two images were taken from two cameras, so please detect all targets and ensure that the same object in both images is assigned the same identifier. For example, if an object is labeled as tomato1 in Image 1, it should also be labeled as tomato1 in Image 2 if it is the same object. Generate bounding boxes (bbox) for each detected object and maintain consistent naming across both images, return their locations in the form of coordinates, don't give up any information about the details. The format of output should be like" +"{“bbox”: [x1, y1, x2, y2], “label”: the name of this object in English.} not {“bbox_2d”: [x1, y1, x2, y2], “label”: the name of this object in Chinese} for each image. The final output format should be like [[All json of Image I],[All json of Image II]]. Note that not to detect object shadows"},
+                {"type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{base64_image1}"}, 
+                },
+                {"type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{base64_image2}"}, 
+                }
+                ]}]
+        )
+
+    bbox_list_str = completion.choices[0].message.content[7:-3]
+
+    bbox_list = json.loads(bbox_list_str)
+
+    # 打开图片
+    image = Image.open(image_path1)
+    w , h = image.size
+
+    w_bar,h_bar = smart_resize(image_path1)
+
+    bbox_list_orignal1 = resize_bbox_to_original(bbox_list[0], (w, h), (w_bar, h_bar))
+
+    # 打开图片
+    image = Image.open(image_path2)
+    w , h = image.size
+
+    w_bar,h_bar = smart_resize(image_path2)
+
+    bbox_list_orignal2 = resize_bbox_to_original(bbox_list[1], (w, h), (w_bar, h_bar))
+
+    bbox_list_str = [bbox_list_orignal1,bbox_list_orignal2]
+    '''
+    draw = ImageDraw.Draw(image)
+
+    # 遍历结果，绘制边界框
+    for detection in bbox_list_orignal:
+        bbox = detection['bbox']
+        label = detection['label']
+        draw.rectangle(bbox, outline="red", width=2)
+        draw.text((bbox[0], bbox[1]), label, fill="red")
+
+    # 显示图片
+    image.show()'''
+
+    return bbox_list_str
+
 
 def show_box(box, ax):
     x0, y0 = box[0], box[1]
@@ -228,6 +290,7 @@ def get_entitites(image_path, bboxes):
     plt.show()'''
     return ent
 
+
 def get_action(image_path, instruction):
 
     client = OpenAI(
@@ -254,11 +317,11 @@ def get_action(image_path, instruction):
                 ]}]
         )
 
-    action = json.loads(completion.choices[0].message.content[7:-3])
+    action = json.loads(completion.choices[0].message.content[7:-3] , strict=False)
 
     return action
 
-def get_state(image_path, instruction):
+def get_state(image_path, instruction, objects):
 
     client = OpenAI(
         api_key="sk-df55df287b2c420285feb77137467576",
@@ -267,36 +330,30 @@ def get_state(image_path, instruction):
 
     base64_image = encode_image(image_path)
 
-    prompt = '''
-    {
+    prompt = '''{
+        "Objects" : ["blue block", "yellow block", "mug"],
         "Query" : "grasp the blue block while keeping at least 15cm away from the mug",
         "affordable" : ["blue block"],
-        "avoid" : ["mug","yellow block"]
-    }
-    '''
+        "avoid" : ["mug","yellow block"],
+        "blue block" : {},
+        "yellow block" : {},
+        "mug" : {}
+    }'''
 
     completion = client.chat.completions.create(
         model="qwen2.5-vl-72b-instruct",  
         messages=[{"role": "user","content": [
-                {"type": "text","text": f"This is a robotic arm operation scene. I want {instruction}, Please tell me what objects I should approach and catch, and what objects I should avoid. " + f"The format of output should be like {prompt}"},
+                {"type": "text","text": f"This is a robotic arm operation scene. I want {instruction}, and objects = {objects} ,Please tell me what objects I should approach and catch, and what objects I should avoid. " + f"The format of output should be like {prompt}. Query:{instruction}."},
                 {"type": "image_url",
                 "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}, 
                 }
                 ]}]
         )
 
-    state = json.loads(completion.choices[0].message.content[7:-3])
+    #print(completion.choices[0].message.content[7:-3])
+    state = json.loads(completion.choices[0].message.content[7:-3], strict=False)
 
     return state
-
-
-
-if __name__ == '__main__':
-    image_path = "R.jpeg"
-    obj = "dog"
-    bbox = get_obj_bboxs_list(image_path,obj)
-    entities = get_entitites(image_path, bbox)
-    print(entities)
     
 
 
