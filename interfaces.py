@@ -72,7 +72,7 @@ class LMP_interface():
     obs_dict['_point_cloud_world'] = obj_pc  # in world frame
     obs_dict['normal'] = normalize_vector(obj_normal.mean(axis=0))
 
-    object_obs = Observation(obs_dict)
+    object_obs = {"obs":Observation(obs_dict)}
     return object_obs
 
   def get_ee_obs(self):
@@ -82,7 +82,7 @@ class LMP_interface():
       obs_dict['position'] = self.get_ee_pos()
       obs_dict['aabb'] = np.array([self.get_ee_pos(), self.get_ee_pos()])
       obs_dict['_position_world'] = self._env.get_ee_pos()
-      object_obs = Observation(obs_dict)
+      object_obs = {"obs":Observation(obs_dict)}
       return object_obs
 
   def get_table_obs(self):
@@ -101,11 +101,12 @@ class LMP_interface():
       obs_dict['normal'] = np.array([0, 0, 1])
       obs_dict['aabb'] = np.array([self._world_to_voxel(table_min_world), self._world_to_voxel(table_max_world)])
 
-      object_obs = Observation(obs_dict)
+      object_obs = {"obs":Observation(obs_dict)}
       return object_obs
 
   def update_state(self, instruction):
-      cam = self._env.name2cam["wrist"]
+      cam_name = "front"
+      cam = self._env.name2cam[cam_name]
       rgb, depth, pcd_ = self.get_rgb_depth(cam, get_rgb=True, get_depth=True, get_pcd=True)
 
       image = Image.fromarray(np.array(rgb))
@@ -113,9 +114,14 @@ class LMP_interface():
       image.save(image_path)
 
       objects = self._env.get_object_names()
-      output_image_path, entities = get_world_mask_list(image_path,objects)
 
-      state = get_state(output_image_path, instruction, objects)
+      while True:
+        try:
+          output_image_path, entities = get_world_mask_list(image_path,objects)
+          state = get_state(output_image_path, instruction, objects)
+          break
+        except:
+          print("ERROR: Failed to get state, try again")
 
       for item in entities:
           points, masks, normals = [], [], []
@@ -153,15 +159,15 @@ class LMP_interface():
           obj_points = np.asarray(pcd_downsampled.points)
           obj_normals = np.asarray(pcd_downsampled.normals)
 
-          state[label]["obs"] = self.get_obs(obj_points, obj_normals, label)
+          state[label]= self.get_obs(obj_points, obj_normals, label)
 
       state['gripper'] = self.get_ee_obs()
       state['workspace'] = self.get_table_obs()
 
       # 将state保存为JSON文件
-      state_json_path = f"tmp/state_wrist.json"
-      write_state(state_json_path,state)
-      return state_json_path
+      state_json_path = f"tmp/state_{cam_name}.json"
+
+      return state_json_path,state
 
   def get_state(self, state_json_path):
       state = read_state(state_json_path)
@@ -193,13 +199,13 @@ class LMP_interface():
   def get_ee_pos(self):
     return self._world_to_voxel(self._env.get_ee_pos())
   
-  def execute(self, movable_obs_func, affordance_map=None, avoidance_map=None, rotation_map=None,
+  def execute(self, movable_obs, affordance_map=None, avoidance_map=None, rotation_map=None,
               velocity_map=None, gripper_map=None):
     """
     First use planner to generate waypoint path, then use controller to follow the waypoints.
 
     Args:
-      movable_obs_func: callable function to get observation of the body to be moved
+      movable_obs: a dictionary of movable objects
       affordance_map: callable function that generates a 3D numpy array, the target voxel map
       avoidance_map: callable function that generates a 3D numpy array, the obstacle voxel map
       rotation_map: callable function that generates a 4D numpy array, the rotation voxel map (rotation is represented by a quaternion *in world frame*)
@@ -208,26 +214,26 @@ class LMP_interface():
     """
     # initialize default voxel maps if not specified
     if rotation_map is None:
-      rotation_map = self._get_default_voxel_map('rotation')
+      rotation_map = self._get_default_voxel_map('rotation')()
     if velocity_map is None:
-      velocity_map = self._get_default_voxel_map('velocity')
+      velocity_map = self._get_default_voxel_map('velocity')()
     if gripper_map is None:
-      gripper_map = self._get_default_voxel_map('gripper')
+      gripper_map = self._get_default_voxel_map('gripper')()
     if avoidance_map is None:
-      avoidance_map = self._get_default_voxel_map('obstacle')
-    object_centric = (not movable_obs_func()['name'] in EE_ALIAS)
+      avoidance_map = self._get_default_voxel_map('obstacle')()
+    object_centric = (not movable_obs['name'] in EE_ALIAS)
     execute_info = []
     if affordance_map is not None:
       # execute path in closed-loop
       for plan_iter in range(self._cfg['max_plan_iter']):
         step_info = dict()
         # evaluate voxel maps such that we use latest information
-        movable_obs = movable_obs_func()
-        _affordance_map = affordance_map()
-        _avoidance_map = avoidance_map()
-        _rotation_map = rotation_map()
-        _velocity_map = velocity_map()
-        _gripper_map = gripper_map()
+        #movable_obs = movable_obs_func()
+        _affordance_map = affordance_map
+        _avoidance_map = avoidance_map
+        _rotation_map = rotation_map
+        _velocity_map = velocity_map
+        _gripper_map = gripper_map
         # preprocess avoidance map
         _avoidance_map = self._preprocess_avoidance_map(_avoidance_map, _affordance_map, movable_obs)
         # start planning
@@ -279,7 +285,7 @@ class LMP_interface():
           # execute waypoint
           controller_info = self._controller.execute(movable_obs, waypoint)
           # loggging
-          movable_obs = movable_obs_func()
+          #movable_obs = movable_obs_func()
           dist2target = np.linalg.norm(movable_obs['_position_world'] - traj_world[-1][0])
           if not object_centric and controller_info['mp_info'] == -1:
             print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] failed waypoint {i+1} (wp: {waypoint[0].round(3)}, actual: {movable_obs["_position_world"].round(3)}, target: {traj_world[-1][0].round(3)}, start: {traj_world[0][0].round(3)}, dist2target: {dist2target.round(3)}); mp info: {controller_info["mp_info"]}{bcolors.ENDC}')
@@ -309,9 +315,9 @@ class LMP_interface():
         gripper_state = traj_world[-1][3]
       except:
         # evaluate latest voxel map
-        _rotation_map = rotation_map()
-        _velocity_map = velocity_map()
-        _gripper_map = gripper_map()
+        _rotation_map = rotation_map
+        _velocity_map = velocity_map
+        _gripper_map = gripper_map
         # get last ee pose
         ee_pos_world = self._env.get_ee_pos()
         ee_pos_voxel = self.get_ee_pos()
@@ -520,6 +526,8 @@ def setup_LMP(env, general_config, debug=False):
   controller_config = general_config['controller']
   planner_config = general_config['planner']
   lmp_env_config = general_config['lmp_config']['env']
+
+  #修改lmps_config
   lmps_config = general_config['lmp_config']['lmps']
   env_name = general_config['env_name']
   # LMP env wrapper
@@ -537,30 +545,14 @@ def setup_LMP(env, general_config, debug=False):
       for k in dir(lmp_env) if callable(getattr(lmp_env, k)) and not k.startswith("_")
   }  # our custom APIs exposed to LMPs
 
-  # allow LMPs to access other LMPs
-  lmp_names = [name for name in lmps_config.keys() if not name in ['composer', 'planner', 'config']]
-  low_level_lmps = {
-      k: LMP(k, lmps_config[k], fixed_vars, variable_vars, debug, env_name)
-      for k in lmp_names
-  }
-  variable_vars.update(low_level_lmps)
-
-  # creating the LMP for skill-level composition
-  composer = LMP(
-      'composer', lmps_config['composer'], fixed_vars, variable_vars, debug, env_name
-  )
-  variable_vars['composer'] = composer
-
   # creating the LMP that deals w/ high-level language commands
   task_planner = LMP(
-      'planner', lmps_config['planner'], fixed_vars, variable_vars, debug, env_name
+      'planner', lmps_config, fixed_vars, variable_vars, debug, env_name
   )
 
   lmps = {
-      'plan_ui': task_planner,
-      'composer_ui': composer,
+      'plan_ui': task_planner
   }
-  lmps.update(low_level_lmps)
 
   return lmps, lmp_env
 

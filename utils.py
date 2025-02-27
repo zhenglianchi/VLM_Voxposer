@@ -9,7 +9,7 @@ def set_lmp_objects(lmps, objects):
     if isinstance(lmps, dict):
         lmps = lmps.values()
     for lmp in lmps:
-        lmp._context = f'objects = {objects}'
+        lmp._context = f'{objects}'
 
 def get_clock_time(milliseconds=False):
     curr_time = datetime.datetime.now()
@@ -39,7 +39,7 @@ def load_prompt(prompt_fname):
     else:
         full_path = os.path.join(curr_dir, 'prompts', prompt_fname)
     # read file
-    with open(full_path, 'r') as f:
+    with open(full_path, 'r', encoding='utf-8') as f:
         contents = f.read().strip()
     return contents
 

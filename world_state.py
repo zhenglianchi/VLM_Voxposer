@@ -2,6 +2,8 @@
 import numpy as np
 from PIL import Image
 from VLM_demo import get_entitites,get_world_bboxs_list,get_action,get_state,get_multi_image_world_bboxs_list
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import json
 
@@ -35,7 +37,7 @@ def get_world_mask_list(image_path,instruction):
     output_image_path = "tmp/mask_image.png"
     plt.savefig(output_image_path, bbox_inches='tight', pad_inches=0)
 
-    plt.show()
+    #plt.show()
 
     return output_image_path, entities
 

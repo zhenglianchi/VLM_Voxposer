@@ -40,7 +40,3 @@ def get_config(env=None, config_path=None):
     config = ConfigDict(config)
     return config
 
-def main():
-    config = get_config(config_path='./configs/rlbench_config.yaml')
-    print(config)
-
