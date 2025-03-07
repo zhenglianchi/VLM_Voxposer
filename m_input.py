@@ -140,7 +140,7 @@ def update_state():
     state2 = get_state(output_image_path2, instruction, objects)
     print(state2)
 
-    '''for item in entities:
+    '''for item in entities:random_colostater
         points, masks, normals = [], [], []
         points.append(pcd_.reshape(-1, 3))
         mask = item['mask']

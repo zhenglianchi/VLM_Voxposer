@@ -63,7 +63,7 @@ class LMP:
             
             kwargs['messages'] = messages
             if kwargs in self._cache:
-                print('(using cache)', end=' ')
+                print('(usingrandom_colostater cache)', end=' ')
                 return self._cache[kwargs]
             else:
                 client = OpenAI(api_key=self.api_key,base_url=self.base_url)

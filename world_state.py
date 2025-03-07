@@ -2,14 +2,12 @@
 import numpy as np
 from PIL import Image
 from VLM_demo import get_entitites,get_world_bboxs_list,get_action,get_state,get_multi_image_world_bboxs_list
-import matplotlib
-matplotlib.use('Agg')
+
 import matplotlib.pyplot as plt
 import json
 
-def get_world_mask_list(image_path,instruction):
+def get_world_mask_list(image_path,bbox):
 
-    bbox = get_world_bboxs_list(image_path, instruction)
     entities = get_entitites(image_path, bbox)
 
     original_image = Image.open(image_path)
@@ -49,6 +47,7 @@ def read_state(state_json_path):
     with open(state_json_path, 'r', encoding='utf-8') as json_file:
         loaded_state = json.load(json_file)
     return loaded_state
+
 
 def get_multi_image_world_mask_list(image_path1,image_path2,instruction):
 

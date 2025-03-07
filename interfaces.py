@@ -8,10 +8,13 @@ from scipy.ndimage import distance_transform_edt
 import transforms3d
 from controllers import Controller
 import open3d as o3d
-from world_state import get_world_mask_list, write_state, read_state, get_state
+from world_state import get_world_mask_list, write_state, read_state, get_state,get_world_bboxs_list
+from VLM_demo import track_mask,add_points,show_mask,show_box
 from PIL import Image
 from transforms3d.quaternions import axangle2quat
-
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')
 
 # creating some aliases for end effector and table in case LLMs refer to them differently (but rarely this happens)
 EE_ALIAS = ['ee', 'endeffector', 'end_effector', 'end effector', 'gripper', 'hand']
@@ -26,6 +29,8 @@ class LMP_interface():
     self._map_size = self._cfg['map_size']
     self._planner = PathPlanner(planner_config, map_size=self._map_size)
     self._controller = Controller(self._env, controller_config)
+    self.cam_name = "front"
+    self.cam = self._env.name2cam['front']
 
     # calculate size of each voxel (resolution)
     self._resolution = (self._env.workspace_bounds_max - self._env.workspace_bounds_min) / self._map_size
@@ -36,7 +41,7 @@ class LMP_interface():
     print()
   
   # ======================================================
-  # == functions exposed to LLM
+  # == functions exposed to LLMstate
   # ======================================================
 
   def get_rgb_depth(self, sensor=None, get_rgb=True, get_depth=True,get_pcd=True):
@@ -103,11 +108,10 @@ class LMP_interface():
 
       object_obs = {"obs":Observation(obs_dict)}
       return object_obs
+  
 
-  def update_state(self, instruction):
-      cam_name = "front"
-      cam = self._env.name2cam[cam_name]
-      rgb, depth, pcd_ = self.get_rgb_depth(cam, get_rgb=True, get_depth=True, get_pcd=True)
+  def update_box(self):
+      rgb, _, _ = self.get_rgb_depth(self.cam, get_rgb=True, get_depth=False, get_pcd=False)
 
       image = Image.fromarray(np.array(rgb))
       image_path = "tmp/rgb.jpeg"
@@ -115,59 +119,94 @@ class LMP_interface():
 
       objects = self._env.get_object_names()
 
+      bbox = get_world_bboxs_list(image_path, objects)
+
+      return bbox
+  
+  def _capture_rgb(self):
+    self.cam.handle_explicitly()
+    rgb = self.cam.capture_rgb()
+    frame = Image.fromarray(np.clip((rgb * 255.).astype(np.uint8), 0, 255)).convert("RGB")
+    return frame
+
+  def update_mask_entities(self, bbox_entities):
+      frame = self._capture_rgb()
+
+      bbox_entities = add_points(frame, bbox_entities=bbox_entities ,if_init=True)
+      #print(bbox_entities)
+      state = {}
+
+      plt.figure(figsize=(20, 20))
       while True:
+        frame = self._capture_rgb()
+        _, _, pcd_ = self.get_rgb_depth(self.cam, get_rgb=False, get_depth=True, get_pcd=True)
+
+        plt.clf()
+        plt.imshow(frame)
         try:
-          output_image_path, entities = get_world_mask_list(image_path,objects)
-          state = get_state(output_image_path, instruction, objects)
-          break
-        except:
-          print("ERROR: Failed to get state, try again")
+          result = track_mask(frame, if_init=False)
 
-      for item in entities:
-          points, masks, normals = [], [], []
-          points.append(pcd_.reshape(-1, 3))
-          mask = item['mask']
-          label = item['label']
-          h, w = mask.shape[-2:]
-          mask = mask.astype(np.uint8)
-          mask =  mask.reshape(h, w).reshape(-1)
-          masks.append(mask)
+          obj_ids = result['obj_ids']
+          masks_ = result['masks']
+          #print(masks_.shape)  #[4,1,768,1024]
+          for item in bbox_entities:
+              points, masks, normals = [], [], []
+              points.append(pcd_.reshape(-1, 3))
+              id = item['id']
+              #print(id)
+              mask = masks_[id]
+              label = item['label']
+              h, w = mask.shape[-2:]
+              #print(h,w)
+              mask = (mask>0.0).astype(np.uint8)
 
-          # estimate normals using o3d
-          pcd = o3d.geometry.PointCloud()
-          pcd.points = o3d.utility.Vector3dVector(points[-1])
-          pcd.estimate_normals()
-          cam_normals = np.asarray(pcd.normals)
-          # use lookat vector to adjust normal vectors
-          flip_indices = np.dot(cam_normals, self._env.lookat_vectors["wrist"]) > 0
-          cam_normals[flip_indices] *= -1
-          normals.append(cam_normals)
+              show_mask(mask,plt.gca())
 
-          points = np.array(points)
-          masks = np.array(masks)
-          normals = np.array(normals)
+              mask =  mask.reshape(h, w).reshape(-1)
+              masks.append(mask)
 
-          obj_points = points[np.isin(masks, 1)]
-          if len(obj_points) == 0:
-              raise ValueError(f"Scene not any object!")
-          obj_normals = normals[np.isin(masks, 1)]
-          # voxel downsample using o3d
-          pcd = o3d.geometry.PointCloud()
-          pcd.points = o3d.utility.Vector3dVector(obj_points)
-          pcd.normals = o3d.utility.Vector3dVector(obj_normals)
-          pcd_downsampled = pcd.voxel_down_sample(voxel_size=0.001)
-          obj_points = np.asarray(pcd_downsampled.points)
-          obj_normals = np.asarray(pcd_downsampled.normals)
+              # estimate normals using o3d
+              pcd = o3d.geometry.PointCloud()
+              pcd.points = o3d.utility.Vector3dVector(points[-1])
+              pcd.estimate_normals()
+              cam_normals = np.asarray(pcd.normals)
+              # use lookat vector to adjust normal vectors
+              flip_indices = np.dot(cam_normals, self._env.lookat_vectors[self.cam_name]) > 0
+              cam_normals[flip_indices] *= -1
+              normals.append(cam_normals)
 
-          state[label]= self.get_obs(obj_points, obj_normals, label)
+              points = np.array(points)
+              masks = np.array(masks)
+              normals = np.array(normals)
 
-      state['gripper'] = self.get_ee_obs()
-      state['workspace'] = self.get_table_obs()
+              obj_points = points[np.isin(masks, 1)]
+              if len(obj_points) == 0:
+                  raise ValueError(f"Scene not any object!")
+              obj_normals = normals[np.isin(masks, 1)]
+              # voxel downsample using o3d
+              pcd = o3d.geometry.PointCloud()
+              pcd.points = o3d.utility.Vector3dVector(obj_points)
+              pcd.normals = o3d.utility.Vector3dVector(obj_normals)
+              pcd_downsampled = pcd.voxel_down_sample(voxel_size=0.001)
+              obj_points = np.asarray(pcd_downsampled.points)
+              obj_normals = np.asarray(pcd_downsampled.normals)
 
-      # 将state保存为JSON文件
-      state_json_path = f"tmp/state_{cam_name}.json"
+              state[label]= self.get_obs(obj_points, obj_normals, label)
 
-      return state_json_path,state
+          state['gripper'] = self.get_ee_obs()
+          state['workspace'] = self.get_table_obs()
+
+          # 将state保存为JSON文件
+          state_json_path = f"tmp/state_{self.cam_name}.json"
+          write_state(state_json_path, state)
+          print("update state success!")
+          plt.axis('off')
+          plt.draw()
+          plt.savefig(f"tmp/state_{self.cam_name}.png", bbox_inches='tight', pad_inches=0)
+          #plt.pause(0.01)
+
+        except Exception as e:
+          print(f"ERROR: Failed to get state, try again - {e}")
 
   def get_state(self, state_json_path):
       state = read_state(state_json_path)
@@ -183,14 +222,14 @@ class LMP_interface():
     返回:
     np.array: 表示旋转的四元数。
     """
-    v = v / np.linalg.norm(v)
+    vec = vec / np.linalg.norm(vec)
 
     # 目标方向是z轴
     target = np.array([0, 0, 1])
 
     # 计算旋转
     # 使用Rotation.from_rotvec来获取从z轴到v的旋转
-    rotation = R.align_vectors([v], [target])[0]
+    rotation = R.align_vectors([vec], [target])[0]
 
     # 获取四元数
     quat = rotation.as_quat()  # 返回四元数 [x, y, z, w] 格式

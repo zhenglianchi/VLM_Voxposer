@@ -59,29 +59,29 @@ class VoxPoserRLBench():
         if self.visualizer is not None:
             self.visualizer.update_bounds(self.workspace_bounds_min, self.workspace_bounds_max)
         #self.camera_names = ['front', 'left_shoulder', 'right_shoulder', 'overhead', 'wrist']
-        self.camera_names = ['front', 'wrist']
+        self.camera_names = ['front']
         # calculate lookat vector for all cameras (for normal estimation)
         name2cam = {
             'front': self.rlbench_env._scene._cam_front,
             #'left_shoulder': self.rlbench_env._scene._cam_over_shoulder_left,
             #'right_shoulder': self.rlbench_env._scene._cam_over_shoulder_right,
             #'overhead': self.rlbench_env._scene._cam_overhead,
-            'wrist': self.rlbench_env._scene._cam_wrist,
+            #'wrist': self.rlbench_env._scene._cam_wrist,
         }
         name2cam_mask = {
             'front': self.rlbench_env._scene._cam_front_mask,
             #'left_shoulder': self.rlbench_env._scene._cam_over_shoulder_left_mask,
             #'right_shoulder': self.rlbench_env._scene._cam_over_shoulder_right_mask,
             #'overhead': self.rlbench_env._scene._cam_overhead_mask,
-            'wrist': self.rlbench_env._scene._cam_wrist_mask,
+            #'wrist': self.rlbench_env._scene._cam_wrist_mask,
         }
         self.name2cam = name2cam
         self.name2cam_mask = name2cam_mask
         forward_vector = np.array([0, 0, 1])
         self.lookat_vectors = {}
         for cam_name in self.camera_names:
-            name2cam[cam_name].set_resolution([640,480])
-            name2cam_mask[cam_name].set_resolution([640,480])
+            name2cam[cam_name].set_resolution([1024,768])
+            name2cam_mask[cam_name].set_resolution([1024,768])
             name2cam[cam_name].set_perspective_angle(75)
             name2cam_mask[cam_name].set_perspective_angle(75)
 

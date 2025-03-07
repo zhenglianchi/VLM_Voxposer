@@ -6,7 +6,8 @@ from utils import set_lmp_objects
 import numpy as np
 from rlbench import tasks
 import threading
-from world_state import write_state, read_state
+import os
+import time
 
 #load config
 config_path = "configs/vlm_rlbench_config.yaml"
@@ -44,39 +45,33 @@ set_lmp_objects(lmps, env.get_object_names())
 # set the random instruction prompt text
 instruction = np.random.choice(descriptions)
 
-print("init world state.................")
-state_json_path, state = lmp_env.update_state(instruction)
-write_state(state_json_path,state)
-print("init world state done.")
+bbox_entities = lmp_env.update_box()
 
-
-
-stop_threads = False
-def update_state(instruction):
-    while not stop_threads:
-        print("thread 1 running...")
-        state_json_path, state = lmp_env.update_state(instruction)
-        print(state)
-        write_state(state_json_path,state)
-        print("thread 1 done.")
+def update_state(bbox_entities):
+    print("thread 1 running...")
+    lmp_env.update_mask_entities(bbox_entities)
 
 def run_voxposer_ui(instruction):
     print("thread 2 running...")
-    global stop_threads
     try:
         voxposer_ui(instruction)
-        stop_threads = True
         print("thread 2 done.")
     except Exception as e:
-        stop_threads = True
         print(f"Error in thread 2: {e}")
 
-thread1 = threading.Thread(target=update_state, args=(instruction,))
+
+thread1 = threading.Thread(target=update_state, args=(bbox_entities,))
 thread2 = threading.Thread(target=run_voxposer_ui, args=(instruction,))
 
 thread1.start()
+
+while not os.path.exists(f"./tmp/state_{lmp_env.cam_name}.json"):
+    time.sleep(1)
+
 thread2.start()
 
 thread2.join()
-thread1.join()
 
+os.remove(f"./tmp/state_{lmp_env.cam_name}.json")
+
+os._exit(0)

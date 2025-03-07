@@ -7,7 +7,7 @@ import numpy as np
 import requests
 import json_numpy
 import matplotlib.pyplot as plt
-import dashscope
+
 json_numpy.patch()
 
 def encode_image(image_path):
@@ -37,7 +37,7 @@ def resize_bbox_to_original(bbox_list, original_size, resized_size):
         
         # 更新到放大后的边界框列表
         resized_bbox_list.append({
-            'bbox': [new_x1, new_y1, new_x2, new_y2],
+            'bbox': [[new_x1, new_y1], [new_x2, new_y2]],
             'label': detection['label']
         })
     
@@ -222,9 +222,9 @@ def get_multi_image_world_bboxs_list(image_path1,image_path2,instruction):
     bbox_list_str = [bbox_list_orignal1,bbox_list_orignal2]
     '''
     draw = ImageDraw.Draw(image)
-
+state
     # 遍历结果，绘制边界框
-    for detection in bbox_list_orignal:
+    for detectionmask in bbox_list_orignal:
         bbox = detection['bbox']
         label = detection['label']
         draw.rectangle(bbox, outline="red", width=2)
@@ -241,7 +241,7 @@ def show_box(box, ax):
     w, h = box[2] - box[0], box[3] - box[1]
     ax.add_patch(plt.Rectangle((x0, y0), w, h, edgecolor='green', facecolor=(0, 0, 0, 0), lw=2)) 
 
-def show_mask(mask, ax, random_color=False):
+def show_mask(mask, ax, random_color=True):
     if random_color:
         color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
     else:
@@ -259,7 +259,7 @@ def get_response(url,query):
         print("Error:", response.status_code, response.text)
 
 def get_entitites(image_path, bboxes):
-    url_sam2 = "http://10.129.38.192:8006/act"
+    url_sam2 = "http://10.129.152.163:8006/act"
     image = np.array(Image.open(image_path).convert("RGB"))
 
     ent = bboxes.copy()
@@ -289,6 +289,37 @@ def get_entitites(image_path, bboxes):
     plt.axis('off')
     plt.show()'''
     return ent
+
+
+def add_points(image, bbox_entities, if_init):
+    url_sam2 = "http://10.129.149.177:8006/act"
+
+    boxes = [item["bbox"] for item in bbox_entities]
+    
+    points = []
+    labels = []
+    obj_ids = []
+    id = 0
+    for i in range(len(boxes)):
+        x = int((boxes[i][0][0] + boxes[i][1][0]) / 2)
+        y = int((boxes[i][0][1] + boxes[i][1][1]) / 2)
+        points.append([x,y])
+        labels.append(1)
+        obj_ids.append(id)
+        bbox_entities[i]["id"] = obj_ids[-1]
+        id += 1
+
+    query_sam2 = {"image": np.array(image), "points": np.array(points,dtype=np.float32), "labels":np.array(labels,dtype=np.int32), "obj_ids":obj_ids ,"if_init": if_init}
+    result = get_response(url_sam2,query_sam2)
+
+    return bbox_entities
+
+def track_mask(image, if_init):
+    url_sam2 = "http://10.129.149.177:8006/act"
+
+    query_sam2 = {"image": np.array(image), "points": None, "labels":None, "obj_ids":None ,"if_init": if_init}
+    result = get_response(url_sam2,query_sam2)
+    return result
 
 
 def get_action(image_path, instruction):
@@ -324,7 +355,7 @@ def get_action(image_path, instruction):
 def get_state(image_path, instruction, objects):
 
     client = OpenAI(
-        api_key="sk-df55df287b2c420285feb77137467576",
+        api_key="s        cv2.imwrite(image_path, frame)k-df55df287b2c420285feb77137467576",
         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
     )
 
@@ -355,6 +386,5 @@ def get_state(image_path, instruction, objects):
 
     return state
     
-
 
 
