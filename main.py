@@ -47,31 +47,35 @@ instruction = np.random.choice(descriptions)
 
 bbox_entities = lmp_env.update_box()
 
-def update_state(bbox_entities):
-    print("thread 1 running...")
-    lmp_env.update_mask_entities(bbox_entities)
+# 创建锁
+lock = threading.Lock()
 
-def run_voxposer_ui(instruction):
-    print("thread 2 running...")
+
+def update_state(bbox_entities,lock):
+    print("开始更新mask")
+    lmp_env.update_mask_entities(bbox_entities,lock)
+
+def run_voxposer_ui(instruction,lock):
+    print("开始生成代码")
     try:
-        voxposer_ui(instruction)
-        print("thread 2 done.")
+        voxposer_ui(instruction,lock)
     except Exception as e:
         print(f"Error in thread 2: {e}")
 
 
-thread1 = threading.Thread(target=update_state, args=(bbox_entities,))
-thread2 = threading.Thread(target=run_voxposer_ui, args=(instruction,))
+thread1 = threading.Thread(target=update_state, args=(bbox_entities,lock))
+thread2 = threading.Thread(target=run_voxposer_ui, args=(instruction,lock))
 
 thread1.start()
 
-while not os.path.exists(f"./tmp/state_{lmp_env.cam_name}.json"):
+json_name = "./tmp/state_front.json"
+while not os.path.exists(json_name):
     time.sleep(1)
 
 thread2.start()
 
 thread2.join()
 
-os.remove(f"./tmp/state_{lmp_env.cam_name}.json")
+os.remove(json_name)
 
 os._exit(0)

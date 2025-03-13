@@ -118,9 +118,9 @@ class LMP_interface():
       image.save(image_path)
 
       objects = self._env.get_object_names()
-
+      print("正在获取目标框")
       bbox = get_world_bboxs_list(image_path, objects)
-
+      print("获取目标框成功")
       return bbox
   
   def _capture_rgb(self):
@@ -129,7 +129,7 @@ class LMP_interface():
     frame = Image.fromarray(np.clip((rgb * 255.).astype(np.uint8), 0, 255)).convert("RGB")
     return frame
 
-  def update_mask_entities(self, bbox_entities):
+  def update_mask_entities(self, bbox_entities,lock):
       frame = self._capture_rgb()
 
       bbox_entities = add_points(frame, bbox_entities=bbox_entities ,if_init=True)
@@ -138,6 +138,7 @@ class LMP_interface():
 
       plt.figure(figsize=(20, 20))
       while True:
+        start_time = time.time()
         frame = self._capture_rgb()
         _, _, pcd_ = self.get_rgb_depth(self.cam, get_rgb=False, get_depth=True, get_pcd=True)
 
@@ -145,7 +146,6 @@ class LMP_interface():
         plt.imshow(frame)
         try:
           result = track_mask(frame, if_init=False)
-
           obj_ids = result['obj_ids']
           masks_ = result['masks']
           #print(masks_.shape)  #[4,1,768,1024]
@@ -181,7 +181,8 @@ class LMP_interface():
 
               obj_points = points[np.isin(masks, 1)]
               if len(obj_points) == 0:
-                  raise ValueError(f"Scene not any object!")
+                  print(f"Scene not object {label}!")
+                  continue
               obj_normals = normals[np.isin(masks, 1)]
               # voxel downsample using o3d
               pcd = o3d.geometry.PointCloud()
@@ -198,8 +199,10 @@ class LMP_interface():
 
           # 将state保存为JSON文件
           state_json_path = f"tmp/state_{self.cam_name}.json"
-          write_state(state_json_path, state)
-          print("update state success!")
+          write_state(state_json_path, state,lock)
+          end_time = time.time()  # 记录结束时间
+          elapsed_time_ms = (end_time - start_time) * 1000  # 计算并转换为毫秒
+          print("update state success!"+f"Consumed time: {elapsed_time_ms:.2f} ms")
           plt.axis('off')
           plt.draw()
           plt.savefig(f"tmp/state_{self.cam_name}.png", bbox_inches='tight', pad_inches=0)
@@ -207,10 +210,6 @@ class LMP_interface():
 
         except Exception as e:
           print(f"ERROR: Failed to get state, try again - {e}")
-
-  def get_state(self, state_json_path):
-      state = read_state(state_json_path)
-      return state
   
   def vec2quat(self, vec):
     """

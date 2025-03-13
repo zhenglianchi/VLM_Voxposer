@@ -80,8 +80,8 @@ class VoxPoserRLBench():
         forward_vector = np.array([0, 0, 1])
         self.lookat_vectors = {}
         for cam_name in self.camera_names:
-            name2cam[cam_name].set_resolution([1024,768])
-            name2cam_mask[cam_name].set_resolution([1024,768])
+            name2cam[cam_name].set_resolution([640,480])
+            name2cam_mask[cam_name].set_resolution([640,480])
             name2cam[cam_name].set_perspective_angle(75)
             name2cam_mask[cam_name].set_perspective_angle(75)
 

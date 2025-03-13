@@ -4,6 +4,7 @@ from PIL import Image
 from VLM_demo import get_entitites,get_world_bboxs_list,get_action,get_state,get_multi_image_world_bboxs_list
 
 import matplotlib.pyplot as plt
+import time
 import json
 
 def get_world_mask_list(image_path,bbox):
@@ -39,13 +40,23 @@ def get_world_mask_list(image_path,bbox):
 
     return output_image_path, entities
 
-def write_state(output_json_path,state):
-    with open(output_json_path, 'w', encoding='utf-8') as json_file:
-        json.dump(state, json_file)
+def write_state(output_json_path,state,lock):
+    while True:
+        with lock:
+            with open(output_json_path, 'w', encoding='utf-8') as json_file:
+                json.dump(state, json_file)
+                break
+        time.sleep(0.1)
+        
 
-def read_state(state_json_path):
-    with open(state_json_path, 'r', encoding='utf-8') as json_file:
-        loaded_state = json.load(json_file)
+def read_state(state_json_path,lock):
+    while True:
+        with lock:
+            with open(state_json_path, 'r', encoding='utf-8') as json_file:
+                loaded_state = json.load(json_file)
+                break
+        time.sleep(0.1)
+
     return loaded_state
 
 

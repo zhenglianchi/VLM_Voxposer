@@ -163,7 +163,7 @@ def get_world_bboxs_list(image_path,instruction):
     draw = ImageDraw.Draw(image)
 
     # 遍历结果，绘制边界框
-    '''for detection in bbox_list_orignal:
+    '''for detection in bbox_list_orignal:api_key="s        cv2.imwrite(image_path, frame)k-df55df287b2c420285feb77137467576",
         bbox = detection['bbox']
         label = detection['label']
         draw.rectangle(bbox, outline="red", width=2)
@@ -355,7 +355,7 @@ def get_action(image_path, instruction):
 def get_state(image_path, instruction, objects):
 
     client = OpenAI(
-        api_key="s        cv2.imwrite(image_path, frame)k-df55df287b2c420285feb77137467576",
+        api_key="sk-df55df287b2c420285feb77137467576",
         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
     )
 

@@ -18,7 +18,6 @@ Variable Descriptions:
 Function Descriptions:
 
     Function execute(movable_obs_func, affordance_map=None, avoidance_map=None, rotation_map=None,velocity_map=None, gripper_map=None): Used to Plan the path and run.
-    Function get_state(state_json_path): Used to get current state of the world, return the state dictionary, state_json_path = "./tmp/state_front.json".
     Function reset_to_default_pose(): Used to reset the robot to its default pose.
     Function get_empty_affordance_map(): Used to get the empty affordance map.
     Function get_empty_avoidance_map(): Used to get the empty avoidance map.
@@ -43,35 +42,34 @@ Example1 Function Calls:
 # Objects : [blue block, yellow block, mug]
 # Query : place the blue block on the yellow block, and avoid the mug at all time.
 # action1 : grasp the blue block at a quarter of the speed while keeping at least 15cm away from the mug
-state_json_path = "./tmp/state_front.json"
-state = get_state(state_json_path)
+state = state
 movable = state["gripper"]["obs"]
 blue_block = state["blue block"]["obs"]
-
+# affordance_map
 affordance_map = get_empty_affordance_map()
 x, y, z = blue_block["position"]
 affordance_map[x, y, z] = 1
-
+# velocity_map
 velocity_map = get_empty_velocity_map()
 velocity_map[:] = 0.25
-
+# gripper_map
 gripper_map = get_empty_gripper_map()
 # open everywhere
 gripper_map[:, :, :] = 1
 # close when 1cm around the blue block
 set_voxel_by_radius(gripper_map, blue_block["position"], radius_cm=1, value=0)
-
+# execute
+完整内容为：
+```python
 execute(movable, affordance_map=affordance_map, velocity_map=velocity_map, gripper_map=gripper_map)
-
 # action2 : back to default pose
 reset_to_default_pose()
-
 # action3 : move to 5cm on top of the yellow block while keeping at least 15cm away from the mug
-state = get_state(state_json_path)
+state = state
 movable = state["gripper"]["obs"]
 mug = state["mug"]["obs"]
 yellow_block = state["yellow block"]["obs"]
-
+# affordance_map
 affordance_map = get_empty_affordance_map()
 (min_x, min_y, min_z), (max_x, max_y, max_z) = yellow_block["aabb"]
 center_x, center_y, center_z = yellow_block["position"]
@@ -80,17 +78,15 @@ x = center_x
 y = center_y
 z = max_z + cm2index(5, 'z')
 affordance_map[x, y, z] = 1
-
+# avoidance_map
 avoidance_map = get_empty_avoidance_map()
 set_voxel_by_radius(avoidance_map, mug["position"], radius_cm=15, value=1)
-
+# execute
 execute(movable, affordance_map=affordance_map, avoidance_map=avoidance_map, velocity_map=velocity_map)
-
 # action4 : open gripper
 gripper_map = get_empty_gripper_map()
 # open everywhere
 gripper_map[:, :, :] = 1
-
 # done
 '''
 
@@ -100,26 +96,23 @@ Example2 Function Calls:
 # Objects : [steak, grill, plate]
 # Query : Take the steak out of the grill and put it flat on the plate.
 # action1 : grasp the steak
-state_json_path = "./tmp/state_front.json"
-state = get_state(state_json_path)
+state = state
 movable = state["gripper"]["obs"]
 steak = state["steak"]["obs"]
-
+# affordance_map
 affordance_map = get_empty_affordance_map()
 x, y, z = steak["position"]
 affordance_map[x, y, z] = 1
-
+# gripper_map
 gripper_map = get_empty_gripper_map()
 # open everywhere
 gripper_map[:, :, :] = 1
 # close when 1cm around the steak
 set_voxel_by_radius(gripper_map, steak["position"], radius_cm=1, value=0)
-
+# execute
 execute(movable, affordance_map=affordance_map, velocity_map=velocity_map, gripper_map=gripper_map)
-
 # action2 : back to default pose
 reset_to_default_pose()
-
 # action3 ：rotate the gripper to be 45 degrees slanted relative to the plate
 rotation_map = get_empty_rotation_map()
 plate = state["plate"]["obs"]
@@ -128,12 +121,11 @@ face_plate_quat = vec2quat(-plate["normal"])
 rotation_delta = euler2quat(-np.pi / 4, 0, 0)
 target_rotation = qmult(face_plate_quat, rotation_delta)
 rotation_map[:, :, :] = target_rotation
-
 # action4 ：move to 10cm on top of the plate
-state = get_state(state_json_path)
+state = state
 movable = state["gripper"]["obs"]
 plate = state["plate"]["obs"]
-
+# affordance_map
 affordance_map = get_empty_affordance_map()
 (min_x, min_y, min_z), (max_x, max_y, max_z) = plate["aabb"]
 center_x, center_y, center_z = plate["position"]
@@ -142,16 +134,14 @@ x = center_x
 y = center_y
 z = max_z + cm2index(10, 'z')
 affordance_map[x, y, z] = 1
-
+# execute
 execute(movable, affordance_map=affordance_map)
-
 # action5 ：open gripper
 movable = state["gripper"]["obs"]
-
+# gripper_map
 gripper_map = get_empty_gripper_map()
 # open everywhere
 gripper_map[:, :, :] = 1
 execute(movable, gripper_map=gripper_map)
-
 # done
 '''
