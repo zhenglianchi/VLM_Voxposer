@@ -82,8 +82,8 @@ class VoxPoserRLBench():
         for cam_name in self.camera_names:
             name2cam[cam_name].set_resolution([640,480])
             name2cam_mask[cam_name].set_resolution([640,480])
-            name2cam[cam_name].set_perspective_angle(75)
-            name2cam_mask[cam_name].set_perspective_angle(75)
+            name2cam[cam_name].set_perspective_angle(60)
+            name2cam_mask[cam_name].set_perspective_angle(60)
 
             extrinsics = name2cam[cam_name].get_matrix()
             lookat = extrinsics[:3, :3] @ forward_vector

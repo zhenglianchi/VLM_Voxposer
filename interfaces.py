@@ -205,7 +205,7 @@ class LMP_interface():
           print("update state success!"+f"Consumed time: {elapsed_time_ms:.2f} ms")
           plt.axis('off')
           plt.draw()
-          plt.savefig(f"tmp/state_{self.cam_name}.png", bbox_inches='tight', pad_inches=0)
+          plt.savefig(f"tmp/state_{self.cam_name}.jpeg", bbox_inches='tight', pad_inches=0)
           #plt.pause(0.01)
 
         except Exception as e:

@@ -129,7 +129,7 @@ def get_obj_bboxs_list(image_path,obj):
 
     return bbox_list_orignal
 
-def get_world_bboxs_list(image_path,instruction):
+def get_world_bboxs_list(image_path,objects):
 
     client = OpenAI(
         api_key="sk-df55df287b2c420285feb77137467576",
@@ -141,7 +141,7 @@ def get_world_bboxs_list(image_path,instruction):
     completion = client.chat.completions.create(
         model="qwen2.5-vl-72b-instruct",  
         messages=[{"role": "user","content": [
-                {"type": "text","text": f"This is a robotic arm operation scene, you need to detect {instruction}. Detect all objects in the image and return their locations in the form of coordinates, don't give up any information about the details. The format of output should be like" +"{“bbox”: [x1, y1, x2, y2], “label”: the name of this object in English.} not {“bbox_2d”: [x1, y1, x2, y2], “label”: the name of this object in Chinese}"},
+                {"type": "text","text": f"This is a robotic arm operation scene, you need to detect {objects}. Detect all objects in the image and return their locations in the form of coordinates, don't give up any information about the details. The format of output should be like" +"{“bbox”: [x1, y1, x2, y2], “label”: the name of this object in English.} not {“bbox_2d”: [x1, y1, x2, y2], “label”: the name of this object in Chinese}"},
                 {"type": "image_url",
                 "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}, 
                 }
@@ -160,17 +160,19 @@ def get_world_bboxs_list(image_path,instruction):
 
     bbox_list_orignal = resize_bbox_to_original(bbox_list, (w, h), (w_bar, h_bar))
 
+    '''
     draw = ImageDraw.Draw(image)
 
     # 遍历结果，绘制边界框
-    '''for detection in bbox_list_orignal:api_key="s        cv2.imwrite(image_path, frame)k-df55df287b2c420285feb77137467576",
+    for detection in bbox_list_orignal:
         bbox = detection['bbox']
         label = detection['label']
         draw.rectangle(bbox, outline="red", width=2)
         draw.text((bbox[0], bbox[1]), label, fill="red")
 
     # 显示图片
-    image.show()'''
+    image.show()
+    '''
 
     return bbox_list_orignal
 
@@ -241,7 +243,7 @@ def show_box(box, ax):
     w, h = box[2] - box[0], box[3] - box[1]
     ax.add_patch(plt.Rectangle((x0, y0), w, h, edgecolor='green', facecolor=(0, 0, 0, 0), lw=2)) 
 
-def show_mask(mask, ax, random_color=True):
+def show_mask(mask, ax, random_color=False):
     if random_color:
         color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
     else:
@@ -292,7 +294,7 @@ def get_entitites(image_path, bboxes):
 
 
 def add_points(image, bbox_entities, if_init):
-    url_sam2 = "http://10.129.149.177:8006/act"
+    url_sam2 = "http://10.129.152.163:8006/act"
 
     boxes = [item["bbox"] for item in bbox_entities]
     
@@ -315,7 +317,7 @@ def add_points(image, bbox_entities, if_init):
     return bbox_entities
 
 def track_mask(image, if_init):
-    url_sam2 = "http://10.129.149.177:8006/act"
+    url_sam2 = "http://10.129.152.163:8006/act"
 
     query_sam2 = {"image": np.array(image), "points": None, "labels":None, "obj_ids":None ,"if_init": if_init}
     result = get_response(url_sam2,query_sam2)

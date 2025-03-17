@@ -6,8 +6,8 @@ from utils import set_lmp_objects
 import numpy as np
 from rlbench import tasks
 import threading
-import os
 import time
+import os
 
 #load config
 config_path = "configs/vlm_rlbench_config.yaml"
