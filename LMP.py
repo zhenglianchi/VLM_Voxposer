@@ -3,7 +3,7 @@ from openai import RateLimitError, APIConnectionError,OpenAI
 from utils import load_prompt
 import time
 from VLM_demo import encode_image
-from world_state import read_state
+from VLM_demo import read_state
 import json
 
 
@@ -18,6 +18,8 @@ class LMP:
         self._stop_tokens = [self._cfg['stop']]
         self._fixed_vars = fixed_vars
         self._variable_vars = variable_vars
+        self.gvars = merge_dicts([self._fixed_vars, self._variable_vars])
+        self.lvars = self.gvars
         self._context = None
         #set your api_key Qwen
         self.api_key= "sk-df55df287b2c420285feb77137467576"
@@ -71,14 +73,13 @@ class LMP:
       state = read_state(state_json_path,lock)
       return state
     
-    def _cached_api_call(self, **kwargs):
+    def _api_call(self, **kwargs):
         # check whether completion endpoint or chat endpoint is used
         if kwargs['model'] != 'gpt-3.5-turbo-instruct' and \
             any([chat_model in kwargs['model'] for chat_model in ['gpt-3.5', 'gpt-4', 'yi-large','glm-4-flash',"qwen2.5-72b-instruct"]]):
             # add special prompt for chat endpoint
             user1 = kwargs.pop('prompt')
             user_query = kwargs.pop('user_query')
-            lock = kwargs.pop('lock')
             action = kwargs.pop('action')
             user_query = user_query + f"\n# action : {action}"
 
@@ -103,80 +104,88 @@ class LMP:
             response = client.chat.completions.create(**kwargs)
 
             print(f'*** OpenAI API call took {time.time() - start_time:.2f}s ***')
-
-            full_content = ""
-            print("流式输出内容为：")
-
-            skip_first_flag = False
-            preview_content = None
-            last_content = None
-            gvars = merge_dicts([self._fixed_vars, self._variable_vars])
-            lvars = kwargs
-
-            #print(gvars,lvars)
-
-            for chunk in response:
-                if chunk.choices:
-                    content = chunk.choices[0].delta.content
-                    full_content += content
-                    #print(repr(content))  # 输出当前流式数据
-                    
-                    if "\n" in content and skip_first_flag:  # 若当前内容包含换行符，说明已接收到完整代码，可以执行代码
-                        code_lines = full_content.split('\n')
-                        preview_content = code_lines[-2]
-                        if "```" in preview_content:
-                            continue
-                        #print(code_lines)
-                        print(f"执行代码：{preview_content}")
-                        try:
-                            state = self.get_state(self.state_json_path,lock)
-                            new_global_vars = {
-                                'state': state,
-                            }
-                            gvars.update(new_global_vars)
-
-                            exec(preview_content, gvars, lvars)  # 执行每一行代码
-                        except Exception as e:
-                            print(f"执行代码时发生错误: {e}")
-                    
-                    skip_first_flag = True  # 跳过第一行的'''python
-
-            last_content = full_content.split('\n')[-1].strip()
-            if "```" not in last_content and last_content:
-                print(f"执行代码：{last_content}")
-                try:
-                    state = self.get_state(self.state_json_path,lock)
-                    new_global_vars = {'state': state,}
-                    gvars.update(new_global_vars)
-                    exec(last_content, gvars, lvars)  # 执行每一行代码
-                except Exception as e:
-                    print(f"执行代码时发生错误: {e}")
-
-            print(full_content)
             
+            generate_code = response.choices[0].message.content.replace("```","").replace("python","")
+            print(generate_code)
 
-
+            return generate_code
+            
+            
         else:
             print("请更换您的模型为['gpt-3.5', 'gpt-4', 'yi-large','glm-4-flash','qwen2.5-72b-instruct']之一")
 
 
+    def _vlmapi_call(self, action,planning):
+        client = OpenAI(
+            api_key="sk-df55df287b2c420285feb77137467576",
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        )
+
+        base64_image = encode_image("./tmp/state_front.jpeg")
+
+        completion = client.chat.completions.create(
+            model="qwen2.5-vl-72b-instruct",  
+            messages=[{"role": "user","content": [
+                    {"type": "text","text": f"This is a robotic arm operation scene, {planning} is a sequence plan, please tell me if this picture completes the {action} in the {planning}. Only output yes or no, and do not have any other information or hints"},
+                    {"type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}, 
+                    }
+                    ]}]
+            )
+
+        #print(completion.choices[0].message.content[7:-3])
+        flag = completion.choices[0].message.content
+
+        return flag
 
     def __call__(self, query, lock):
         prompt, user_query, planning = self.build_prompt(query,self._cfg['planner_model'])
- 
-        for action in planning:
+    
+        action = planning.pop(0)
+        planning_completed = False
+        while not planning_completed:
+            print(f"Action: {action}")
+            action_completed = False
             try:
-                self._cached_api_call(
+                generate_code = self._api_call(
                     prompt=prompt,
                     user_query = user_query,
                     stop=self._stop_tokens,
                     temperature=self._cfg['temperature'],
                     model=self._cfg['model'],
                     max_tokens=self._cfg['max_tokens'],
-                    stream = True,
-                    lock = lock,
                     action = action,
                 )
+                while True:
+                    state = self.get_state(self.state_json_path,lock)
+                    new_global_vars = {
+                        'state': state,
+                    }
+                    self.gvars.update(new_global_vars)
+                    exec(generate_code, self.gvars, self.lvars)
+                    stop = self.lvars["stop"]
+                    # 到达目标位置
+                    if stop:
+                        break
+
+                while not action_completed:
+                    flag = self._vlmapi_call(action,planning)
+                    print("MVLMs give a final answer:",flag)
+                    flag = "yes"
+                    if flag == "yes":
+                        if len(planning) == 0:
+                            print("The plan has been completed.")
+                            planning_completed = True
+                            action_completed = True
+                        else:
+                            action = planning.pop(0)
+                            action_completed = True
+                    elif flag == "no":
+                        break
+                    else:
+                        print("MVLMs are not give a final answer.")
+                        pass
+
 
             except (RateLimitError, APIConnectionError) as e:
                 print(f'OpenAI API got err {e}')

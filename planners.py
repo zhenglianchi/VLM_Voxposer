@@ -28,11 +28,10 @@ class PathPlanner:
             info: dict, info
         """
         print(f'[planners.py | {get_clock_time(milliseconds=True)}] start')
-        info = dict()
         # make copies
-        start_pos, raw_start_pos = start_pos.copy(), start_pos
-        target_map, raw_target_map = target_map.copy(), target_map
-        obstacle_map, raw_obstacle_map = obstacle_map.copy(), obstacle_map
+        start_pos = start_pos.copy()
+        target_map  = target_map.copy()
+        obstacle_map = obstacle_map.copy()
         # smoothing
         target_map = distance_transform_edt(1 - target_map)
         target_map = normalize_map(target_map)
@@ -45,46 +44,25 @@ class PathPlanner:
         # get stop criteria
         stop_criteria = self._get_stop_criteria()
         # initialize path
-        path, current_pos = [start_pos], start_pos
+        current_pos = start_pos
         # optimize
         print(f'[planners.py | {get_clock_time(milliseconds=True)}] start optimizing, start_pos: {start_pos}')
-        for i in range(self.config.max_steps):
-            # calculate all nearby voxels around current position
-            all_nearby_voxels = self._calculate_nearby_voxel(current_pos, object_centric=object_centric)
-            # calculate the score of all nearby voxels
-            nearby_score = _costmap[all_nearby_voxels[:, 0], all_nearby_voxels[:, 1], all_nearby_voxels[:, 2]]
-            # Find the minimum cost voxel
-            steepest_idx = np.argmin(nearby_score)
-            next_pos = all_nearby_voxels[steepest_idx]
-            # increase cost at current position to avoid going back
-            _costmap[current_pos[0].round().astype(int),
-                     current_pos[1].round().astype(int),
-                     current_pos[2].round().astype(int)] += 1
-            # update path and current position
-            path.append(next_pos)
-            current_pos = next_pos
-            # check stop criteria
-            if stop_criteria(current_pos, _costmap, self.config.stop_threshold):
-                break
-        raw_path = np.array(path)
-        print(f'[planners.py | {get_clock_time(milliseconds=True)}] optimization finished; path length: {len(raw_path)}')
-        # postprocess path
-        processed_path = self._postprocess_path(raw_path, raw_target_map, object_centric=object_centric)
-        print(f'[planners.py | {get_clock_time(milliseconds=True)}] after postprocessing, path length: {len(processed_path)}')
-        print(f'[planners.py | {get_clock_time(milliseconds=True)}] last waypoint: {processed_path[-1]}')
-        # save info
-        info['start_pos'] = start_pos
-        info['target_map'] = target_map
-        info['obstacle_map'] = obstacle_map
-        info['costmap'] = costmap
-        info['costmap_altered'] = _costmap
-        info['raw_start_pos'] = raw_start_pos
-        info['raw_target_map'] = raw_target_map
-        info['raw_obstacle_map'] = raw_obstacle_map
-        info['planner_raw_path'] = raw_path.copy()
-        info['planner_postprocessed_path'] = processed_path.copy()
-        info['targets_voxel'] = np.argwhere(raw_target_map == 1)
-        return processed_path, info
+
+        # calculate all nearby voxels around current position
+        all_nearby_voxels = self._calculate_nearby_voxel(current_pos, object_centric=object_centric)
+        # calculate the score of all nearby voxels
+        nearby_score = _costmap[all_nearby_voxels[:, 0], all_nearby_voxels[:, 1], all_nearby_voxels[:, 2]]
+        # Find the minimum cost voxel
+        steepest_idx = np.argmin(nearby_score)
+        next_pos = all_nearby_voxels[steepest_idx]
+        print(f'[planners.py | {get_clock_time(milliseconds=True)}] optimization finished; next_pos: {next_pos}')
+        
+        # check stop criteria
+        if stop_criteria(next_pos, _costmap, self.config.stop_threshold):
+            return next_pos,True
+        else:
+            return next_pos,False
+
     
     def _get_stop_criteria(self):
         def no_nearby_equal_criteria(current_pos, costmap, stop_threshold):

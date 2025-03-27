@@ -8,8 +8,7 @@ from scipy.ndimage import distance_transform_edt
 import transforms3d
 from controllers import Controller
 import open3d as o3d
-from world_state import get_world_mask_list, write_state, read_state, get_state,get_world_bboxs_list
-from VLM_demo import track_mask,add_points,show_mask,show_box
+from VLM_demo import  write_state, get_world_bboxs_list,show_mask,use_sam
 from PIL import Image
 from transforms3d.quaternions import axangle2quat
 import matplotlib.pyplot as plt
@@ -130,12 +129,8 @@ class LMP_interface():
     return frame
 
   def update_mask_entities(self, bbox_entities,lock):
-      frame = self._capture_rgb()
-
-      bbox_entities = add_points(frame, bbox_entities=bbox_entities ,if_init=True)
-      #print(bbox_entities)
+      #frame = self._capture_rgb()
       state = {}
-
       plt.figure(figsize=(20, 20))
       while True:
         start_time = time.time()
@@ -145,19 +140,17 @@ class LMP_interface():
         plt.clf()
         plt.imshow(frame)
         try:
-          result = track_mask(frame, if_init=False)
-          obj_ids = result['obj_ids']
-          masks_ = result['masks']
-          #print(masks_.shape)  #[4,1,768,1024]
-          for item in bbox_entities:
+          bbox = [item["bbox"] for item in bbox_entities]
+          masks_ = use_sam(frame, bbox)
+          print(masks_.shape)
+          for (index,item) in enumerate(bbox_entities):
               points, masks, normals = [], [], []
               points.append(pcd_.reshape(-1, 3))
-              id = item['id']
-              #print(id)
-              mask = masks_[id]
+              mask = masks_[index]
+
               label = item['label']
               h, w = mask.shape[-2:]
-              #print(h,w)
+
               mask = (mask>0.0).astype(np.uint8)
 
               show_mask(mask,plt.gca())
@@ -259,87 +252,50 @@ class LMP_interface():
       gripper_map = self._get_default_voxel_map('gripper')()
     if avoidance_map is None:
       avoidance_map = self._get_default_voxel_map('obstacle')()
+
+    # 如果需要移动的是末端执行器则 object_centric=False，否则为True
     object_centric = (not movable_obs['name'] in EE_ALIAS)
-    execute_info = []
+    stop = True
     if affordance_map is not None:
-      # execute path in closed-loop
-      for plan_iter in range(self._cfg['max_plan_iter']):
-        step_info = dict()
-        # evaluate voxel maps such that we use latest information
-        #movable_obs = movable_obs_func()
-        _affordance_map = affordance_map
-        _avoidance_map = avoidance_map
-        _rotation_map = rotation_map
-        _velocity_map = velocity_map
-        _gripper_map = gripper_map
-        # preprocess avoidance map
-        _avoidance_map = self._preprocess_avoidance_map(_avoidance_map, _affordance_map, movable_obs)
-        # start planning
-        start_pos = movable_obs['position']
-        start_time = time.time()
-        # optimize path and log
-        path_voxel, planner_info = self._planner.optimize(start_pos, _affordance_map, _avoidance_map,
-                                                        object_centric=object_centric)
-        print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] planner time: {time.time() - start_time:.3f}s{bcolors.ENDC}')
-        assert len(path_voxel) > 0, 'path_voxel is empty'
-        step_info['path_voxel'] = path_voxel
-        step_info['planner_info'] = planner_info
-        # convert voxel path to world trajectory, and include rotation, velocity, and gripper information
-        traj_world = self._path2traj(path_voxel, _rotation_map, _velocity_map, _gripper_map)
-        traj_world = traj_world[:self._cfg['num_waypoints_per_plan']]
-        step_info['start_pos'] = start_pos
-        step_info['plan_iter'] = plan_iter
-        step_info['movable_obs'] = movable_obs
-        step_info['traj_world'] = traj_world
-        step_info['affordance_map'] = _affordance_map
-        step_info['rotation_map'] = _rotation_map
-        step_info['velocity_map'] = _velocity_map
-        step_info['gripper_map'] = _gripper_map
-        step_info['avoidance_map'] = _avoidance_map
+      # evaluate voxel maps such that we use latest information
+      _affordance_map = affordance_map
+      _avoidance_map = avoidance_map
+      _rotation_map = rotation_map
+      _velocity_map = velocity_map
+      _gripper_map = gripper_map
+      # preprocess avoidance map
+      _avoidance_map = self._preprocess_avoidance_map(_avoidance_map, _affordance_map, movable_obs)
+      # start planning
+      start_pos = movable_obs['position']
+      if movable_obs['name'] == "gripper":
+        start_pos = self.get_ee_pos()
 
-        # visualize
-        if self._cfg['visualize']:
-          assert self._env.visualizer is not None
-          step_info['start_pos_world'] = self._voxel_to_world(start_pos)
-          step_info['targets_world'] = self._voxel_to_world(planner_info['targets_voxel'])
-          self._env.visualizer.visualize(step_info)
+      next_pos, stop = self._planner.optimize(start_pos, _affordance_map, _avoidance_map, object_centric=object_centric)
+      path_voxel = [next_pos]
+      # convert voxel path to world trajectory, and include rotation, velocity, and gripper information
+      traj_world = self._path2traj(path_voxel, _rotation_map, _velocity_map, _gripper_map)
 
-        # execute path
-        print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] start executing path via controller ({len(traj_world)} waypoints){bcolors.ENDC}')
-        controller_infos = dict()
-        for i, waypoint in enumerate(traj_world):
-          # check if the movement is finished
-          if np.linalg.norm(movable_obs['_position_world'] - traj_world[-1][0]) <= 0.01:
-            print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] reached last waypoint; curr_xyz={movable_obs['_position_world']}, target={traj_world[-1][0]} (distance: {np.linalg.norm(movable_obs['_position_world'] - traj_world[-1][0]):.3f})){bcolors.ENDC}")
-            break
-          # skip waypoint if moving to this point is going in opposite direction of the final target point
-          # (for example, if you have over-pushed an object, no need to move back)
-          if i != 0 and i != len(traj_world) - 1:
-            movable2target = traj_world[-1][0] - movable_obs['_position_world']
-            movable2waypoint = waypoint[0] - movable_obs['_position_world']
-            if np.dot(movable2target, movable2waypoint).round(3) <= 0:
-              print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] skip waypoint {i+1} because it is moving in opposite direction of the final target{bcolors.ENDC}')
-              continue
-          # execute waypoint
-          controller_info = self._controller.execute(movable_obs, waypoint)
-          # loggging
-          #movable_obs = movable_obs_func()
-          dist2target = np.linalg.norm(movable_obs['_position_world'] - traj_world[-1][0])
-          if not object_centric and controller_info['mp_info'] == -1:
-            print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] failed waypoint {i+1} (wp: {waypoint[0].round(3)}, actual: {movable_obs["_position_world"].round(3)}, target: {traj_world[-1][0].round(3)}, start: {traj_world[0][0].round(3)}, dist2target: {dist2target.round(3)}); mp info: {controller_info["mp_info"]}{bcolors.ENDC}')
-          else:
-            print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint {i+1} (wp: {waypoint[0].round(3)}, actual: {movable_obs["_position_world"].round(3)}, target: {traj_world[-1][0].round(3)}, start: {traj_world[0][0].round(3)}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')
-          controller_info['controller_step'] = i
-          controller_info['target_waypoint'] = waypoint
-          controller_infos[i] = controller_info
-        step_info['controller_infos'] = controller_infos
-        execute_info.append(step_info)
-        # check whether we need to replan
-        curr_pos = movable_obs['position']
-        if distance_transform_edt(1 - _affordance_map)[tuple(curr_pos)] <= 2:
-          print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] reached target; terminating {bcolors.ENDC}')
+      # execute path
+      print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] start executing path via controller ({len(traj_world)} waypoints){bcolors.ENDC}')
+
+      for i, waypoint in enumerate(traj_world):
+        # check if the movement is finished
+        if np.linalg.norm(movable_obs['_position_world'] - traj_world[-1][0]) <= 0.01:
+          print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] reached last waypoint; curr_xyz={movable_obs['_position_world']}, target={traj_world[-1][0]} (distance: {np.linalg.norm(movable_obs['_position_world'] - traj_world[-1][0]):.3f})){bcolors.ENDC}")
           break
-    print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] finished executing path via controller{bcolors.ENDC}')
+
+        # waypoint : world_xyz, rotation, velocity, gripper
+        controller_info = self._controller.execute(movable_obs, waypoint)
+
+        dist2target = np.linalg.norm(movable_obs['_position_world'] - traj_world[-1][0])
+        if not object_centric and controller_info['mp_info'] == -1:
+          print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] failed waypoint {i+1} (wp: {waypoint[0].round(3)}, actual: {movable_obs["_position_world"].round(3)}, target: {traj_world[-1][0].round(3)}, start: {traj_world[0][0].round(3)}, dist2target: {dist2target.round(3)}); mp info: {controller_info["mp_info"]}{bcolors.ENDC}')
+        else:
+          print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint {i+1} (wp: {waypoint[0].round(3)}, actual: {movable_obs["_position_world"].round(3)}, target: {traj_world[-1][0].round(3)}, start: {traj_world[0][0].round(3)}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')
+        
+        controller_info['controller_step'] = i
+        controller_info['target_waypoint'] = waypoint
+
 
     # make sure we are at the final target position and satisfy any additional parametrization
     # (skip if we are specifying object-centric motion)
@@ -366,7 +322,7 @@ class LMP_interface():
       # move to the final target
       self._env.apply_action(np.concatenate([ee_pose_world, [gripper_state]]))
 
-    return execute_info
+    return stop
   
   def cm2index(self, cm, direction):
     if isinstance(direction, str) and direction == 'x':
@@ -408,7 +364,9 @@ class LMP_interface():
     
   def pointat2quat(self, vector):
     assert isinstance(vector, np.ndarray) and vector.shape == (3,), f'vector: {vector}'
-    return pointat2quat(vector)
+    return pointat2quat(vector)    # append the last waypoint a few more times for the robot to stabilize
+    for _ in range(1):
+      traj.append((world_xyz, rotation, velocity, gripper))
 
   def set_voxel_by_radius(self, voxel_map, voxel_xyz, radius_cm=0, value=1):
     """given a 3D np array, set the value of the voxel at voxel_xyz to value. If radius is specified, set the value of all voxels within the radius to value."""
@@ -491,7 +449,7 @@ class LMP_interface():
       elif type == 'velocity':
         voxel_map = np.ones((self._map_size, self._map_size, self._map_size))
       elif type == 'gripper':
-        voxel_map = np.ones((self._map_size, self._map_size, self._map_size)) * self._env.get_last_gripper_action()
+        voxel_map = np.ones((self._map_size, self._map_size, self._map_size)) #* self._env.get_last_gripper_action()
       elif type == 'rotation':
         voxel_map = np.zeros((self._map_size, self._map_size, self._map_size, 4))
         voxel_map[:, :, :] = self._env.get_ee_quat()
@@ -534,9 +492,7 @@ class LMP_interface():
           print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] overwriting gripper to less common value for the last waypoint{bcolors.ENDC}')
       # add to trajectory
       traj.append((world_xyz, rotation, velocity, gripper))
-    # append the last waypoint a few more times for the robot to stabilize
-    for _ in range(2):
-      traj.append((world_xyz, rotation, velocity, gripper))
+
     return traj
   
   def _preprocess_avoidance_map(self, avoidance_map, affordance_map, movable_obs):

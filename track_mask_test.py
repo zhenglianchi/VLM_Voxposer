@@ -1,57 +1,67 @@
 from PIL import Image
 import numpy as np
-from VLM_demo import show_mask,add_points,track_mask
 import json_numpy
 json_numpy.patch()
 from matplotlib import pyplot as plt
 import cv2
-from world_state import get_world_bboxs_list
+from VLM_demo import get_world_bboxs_list
 import time
+import numpy as np
+import torch
+import matplotlib.pyplot as plt
+import sys
+sys.path.append("EdgeSAM/")
+from EdgeSAM.edge_sam import sam_model_registry, SamPredictor
+from VLM_demo import show_box,show_mask  
 
+sam_checkpoint = "EdgeSAM/weights/edge_sam.pth"
+model_type = "edge_sam"
 
-cap = cv2.VideoCapture("test.mp4")
-ret, frame = cap.read()
+device = "cuda:0"
 
-image = Image.fromarray(np.array(frame))
-image_path = "test.jpeg"
-image.save(image_path)
+sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
+sam.to(device=device)
 
-objects = "[tiger1,tiger2]"
+predictor = SamPredictor(sam)
+
+cap = cv2.VideoCapture("video.mp4")
+plt.figure(figsize=(10, 10))
+
+image_path = "video.jpeg"
+
+objects = "[浣熊,猫，冰箱]"
 print("正在获取目标框")
-bbox = get_world_bboxs_list(image_path, objects)
+bbox_entities = get_world_bboxs_list(image_path, objects)
 print("获取目标框成功")
 
-bbox_entities = add_points(frame, bbox_entities=bbox ,if_init=True)
-
-plt.figure(figsize=(20, 20))
 while True:
-    start_time = time.time()
     ret, frame = cap.read()
-
-    plt.clf()
+    if frame is None:
+        break
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     plt.imshow(frame)
-
-    result = track_mask(frame, if_init=False)
-    obj_ids = result['obj_ids']
-    masks_ = result['masks']
-    print(masks_.shape)  #[4,1,768,1024]
-
-    for item in bbox_entities:
-        id = item['id']
-        #print(id)
-        mask = masks_[id]
-        label = item['label']
-        h, w = mask.shape[-2:]
-        #print(h,w)
-        mask = (mask>0.0).astype(np.uint8)
-
-        show_mask(mask,plt.gca())
-
-    end_time = time.time()  # 记录结束时间
-    elapsed_time_ms = (end_time - start_time) * 1000  # 计算并转换为毫秒
-    print("update state success!"+f"Consumed time: {elapsed_time_ms:.2f} ms")
     plt.axis('off')
-    plt.draw()
-    plt.pause(0.1)
+    image = Image.fromarray(np.array(frame))
 
+    bbox = [item["bbox"] for item in bbox_entities]
+    print(bbox)
+    predictor.set_image(frame)
+    input_boxes = torch.tensor(bbox, device=predictor.device)
+    transformed_boxes = predictor.transform.apply_boxes_torch(input_boxes, frame.shape[:2])
+    masks, _, _ = predictor.predict_torch(
+        point_coords=None,
+        point_labels=None,
+        boxes=transformed_boxes,
+        num_multimask_outputs=1,
+    )
+    print(masks.shape)
+    for mask in masks:
+        show_mask(mask.cpu().numpy(), plt.gca(), random_color=False)
+    for box in input_boxes:
+        show_box(box.cpu().numpy(), plt.gca())
+    plt.pause(0.01)
+    plt.clf()
+
+plt.close()
+cap.release()
     

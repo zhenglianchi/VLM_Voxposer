@@ -51,9 +51,14 @@ blue_block = state["blue block"]["obs"]
 affordance_map = get_empty_affordance_map()
 x, y, z = blue_block["position"]
 affordance_map[x, y, z] = 1
+# avoidance_map
+avoidance_map = get_empty_avoidance_map()
+set_voxel_by_radius(avoidance_map, mug["position"], radius_cm=15, value=1)
 # velocity_map
 velocity_map = get_empty_velocity_map()
 velocity_map[:] = 0.25
+# rotation_map
+rotation_map = get_empty_rotation_map()
 # gripper_map
 gripper_map = get_empty_gripper_map()
 # open everywhere
@@ -61,7 +66,7 @@ gripper_map[:, :, :] = 1
 # close when 1cm around the blue block
 set_voxel_by_radius(gripper_map, blue_block["position"], radius_cm=1, value=0)
 # execute
-execute(movable, affordance_map=affordance_map, velocity_map=velocity_map, gripper_map=gripper_map)
+stop=execute(movable, affordance_map=affordance_map, avoidance_map=avoidance_map, rotation_map=rotation_map ,velocity_map=velocity_map, gripper_map=gripper_map)
 '''
 
 '''python
@@ -92,8 +97,14 @@ affordance_map[x, y, z] = 1
 # avoidance_map
 avoidance_map = get_empty_avoidance_map()
 set_voxel_by_radius(avoidance_map, mug["position"], radius_cm=15, value=1)
+# velocity_map
+velocity_map = get_empty_velocity_map()
+# rotation_map
+rotation_map = get_empty_rotation_map()
+# gripper_map
+gripper_map = get_empty_gripper_map()
 # execute
-execute(movable, affordance_map=affordance_map, avoidance_map=avoidance_map)
+stop=execute(movable, affordance_map=affordance_map, avoidance_map=avoidance_map, rotation_map=rotation_map ,velocity_map=velocity_map, gripper_map=gripper_map)
 '''
 
 '''python
@@ -101,9 +112,21 @@ execute(movable, affordance_map=affordance_map, avoidance_map=avoidance_map)
 # Query : place the blue block on the yellow block, and avoid the mug at all time.
 # planner : ['grasp the blue block at a quarter of the speed while keeping at least 15cm away from the mug', 'back to default pose', 'move to 5cm on top of the yellow block while keeping at least 15cm away from the mug', 'open gripper']
 # action : open gripper
+movable = state["gripper"]["obs"]
+# affordance_map
+affordance_map = None
+# avoidance_map
+avoidance_map = get_empty_avoidance_map()
+# velocity_map
+velocity_map = get_empty_velocity_map()
+# rotation_map
+rotation_map = get_empty_rotation_map()
+# gripper_map
 gripper_map = get_empty_gripper_map()
 # open everywhere
 gripper_map[:, :, :] = 1
+# execute
+stop=execute(movable, affordance_map=affordance_map, avoidance_map=avoidance_map, rotation_map=rotation_map ,velocity_map=velocity_map, gripper_map=gripper_map)
 '''
 
 '''python
@@ -117,6 +140,12 @@ steak = state["steak"]["obs"]
 affordance_map = get_empty_affordance_map()
 x, y, z = steak["position"]
 affordance_map[x, y, z] = 1
+# avoidance_map
+avoidance_map = get_empty_avoidance_map()
+# velocity_map
+velocity_map = get_empty_velocity_map()
+# rotation_map
+rotation_map = get_empty_rotation_map()
 # gripper_map
 gripper_map = get_empty_gripper_map()
 # open everywhere
@@ -124,7 +153,7 @@ gripper_map[:, :, :] = 1
 # close when 1cm around the steak
 set_voxel_by_radius(gripper_map, steak["position"], radius_cm=1, value=0)
 # execute
-execute(movable, affordance_map=affordance_map, gripper_map=gripper_map)
+stop=execute(movable, affordance_map=affordance_map, avoidance_map=avoidance_map, rotation_map=rotation_map ,velocity_map=velocity_map, gripper_map=gripper_map)
 '''
 
 '''python
@@ -140,6 +169,14 @@ reset_to_default_pose()
 # Query : Take the steak out of the grill and put it flat on the plate.
 # planner: ['grasp the steak', 'back to default pose', 'rotate the gripper to be 45 degrees slanted relative to the plate', 'move to 10cm on top of the plate', 'open gripper']
 # action ：rotate the gripper to be 45 degrees slanted relative to the plate
+movable = state["gripper"]["obs"]
+# affordance_map
+affordance_map = None
+# avoidance_map
+avoidance_map = get_empty_avoidance_map()
+# velocity_map
+velocity_map = get_empty_velocity_map()
+# rotation_map
 rotation_map = get_empty_rotation_map()
 plate = state["plate"]["obs"]
 face_plate_quat = vec2quat(-plate["normal"])
@@ -147,6 +184,10 @@ face_plate_quat = vec2quat(-plate["normal"])
 rotation_delta = euler2quat(-np.pi / 4, 0, 0)
 target_rotation = qmult(face_plate_quat, rotation_delta)
 rotation_map[:, :, :] = target_rotation
+# gripper_map
+gripper_map = get_empty_gripper_map()
+# execute
+stop=execute(movable, affordance_map=affordance_map, avoidance_map=avoidance_map, rotation_map=rotation_map ,velocity_map=velocity_map, gripper_map=gripper_map)
 '''
 
 '''python
@@ -165,8 +206,16 @@ x = center_x
 y = center_y
 z = max_z + cm2index(10, 'z')
 affordance_map[x, y, z] = 1
+# avoidance_map
+avoidance_map = get_empty_avoidance_map()
+# velocity_map
+velocity_map = get_empty_velocity_map()
+# rotation_map
+rotation_map = get_empty_rotation_map()
+# gripper_map
+gripper_map = get_empty_gripper_map()
 # execute
-execute(movable, affordance_map=affordance_map)
+stop=execute(movable, affordance_map=affordance_map, avoidance_map=avoidance_map, rotation_map=rotation_map ,velocity_map=velocity_map, gripper_map=gripper_map)
 '''
 
 '''python
@@ -175,10 +224,18 @@ execute(movable, affordance_map=affordance_map)
 # planner: ['grasp the steak', 'back to default pose', 'rotate the gripper to be 45 degrees slanted relative to the plate', 'move to 10cm on top of the plate', 'open gripper']
 # action ：open gripper
 movable = state["gripper"]["obs"]
+# affordance_map
+affordance_map = None
+# avoidance_map
+avoidance_map = get_empty_avoidance_map()
+# velocity_map
+velocity_map = get_empty_velocity_map()
+# rotation_map
+rotation_map = get_empty_rotation_map()
 # gripper_map
 gripper_map = get_empty_gripper_map()
 # open everywhere
 gripper_map[:, :, :] = 1
 # execute
-execute(movable, gripper_map=gripper_map)
+stop=execute(movable, affordance_map=affordance_map, avoidance_map=avoidance_map, rotation_map=rotation_map ,velocity_map=velocity_map, gripper_map=gripper_map)
 '''
