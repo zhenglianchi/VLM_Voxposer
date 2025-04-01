@@ -35,26 +35,30 @@ Some external library APIs:
     "Action" : "grasp the blue block at a quarter of the speed while keeping at least 5cm away from the mug",
     "movable" : "gripper",
     "affordable" : {
-        "x":"blue_block['position'][0]",
-        "y":"blue_block['position'][1]",
-        "z":"blue_block['position'][2]",
+        "object":"blue_block",
+        "x":"object['position'][0]",
+        "y":"object['position'][1]",
+        "z":"object['position'][2]",
         "target_affordance":1,
         "set":"affordance_map[x, y, z] = target_affordance"
     },
     "avoid" : {
-        "x":"mug['position'][0]",
-        "y":"mug['position'][1]",
-        "z":"mug['position'][2]",
+        "object":"mug",
+        "x":"object['position'][0]",
+        "y":"object['position'][1]",
+        "z":"object['position'][2]",
         "set":"set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm=5, value=1)"
     },
     "gripper": {
-        "x":"blue_block['position'][0]",
-        "y":"blue_block['position'][1]",
-        "z":"blue_block['position'][2]",
+        "object":"blue_block",
+        "x":"object['position'][0]",
+        "y":"object['position'][1]",
+        "z":"object['position'][2]",
         "set":"set_voxel_by_radius(gripper_map, [x,y,z], radius_cm=1, value=0)"
     },
     "rotation": {
-        "target_rotation":"vec2quat(-blue_block['normal'])",
+        "object":"blue_block",
+        "target_rotation":"vec2quat(-object['normal'])",
         "set":"rotation_map[:, :, :] = target_rotation"
     },
     "velocity": {
@@ -70,24 +74,27 @@ Some external library APIs:
     "Action" : "move to 5cm on top of the yellow block while keeping at least 5cm away from the mug",
     "movable" : "gripper",
     "affordable" : {
-        "max_z":"yellow_block['aabb'][1][2]"
-        "x":"yellow_block['position'][0]",
-        "y":"yellow_block['position'][1]",
+        "object":"yellow_block",
+        "max_z":"object['aabb'][1][2]"
+        "x":"object['position'][0]",
+        "y":"object['position'][1]",
         "z":"max_z + cm2index(5, 'z')",
         "target_affordance":1,
         "set":"affordance_map[x, y, z] = target_affordance"
     },
     "avoid" : {
-        "x":"mug['position'][0]",
-        "y":"mug['position'][1]",
-        "z":"mug['position'][2]",
+        "object":"mug",
+        "x":"object['position'][0]",
+        "y":"object['position'][1]",
+        "z":"object['position'][2]",
         "set":"set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm=5, value=1)"
     },
     "gripper": {
         "set":"default"
     },
     "rotation": {
-        "target_rotation":"vec2quat(-yellow_block['normal'])",
+        "object":"yellow_block",
+        "target_rotation":"vec2quat(-object['normal'])",
         "set":"rotation_map[:, :, :] = target_rotation"
     },
     "velocity": {
@@ -125,26 +132,30 @@ Some external library APIs:
     "Action" : "grasp the steak",
     "movable" : "gripper",
     "affordable" : {
-        "x":"steak['position'][0]",
-        "y":"steak['position'][1]",
-        "z":"steak['position'][2]",
+        "object":"steak",
+        "x":"object['position'][0]",
+        "y":"object['position'][1]",
+        "z":"object['position'][2]",
         "target_affordance":1,
         "set":"affordance_map[x, y, z] = target_affordance"
     },
     "avoid" : {
-        "x":"grill['position'][0]",
-        "y":"grill['position'][1]",
-        "z":"grill['position'][2]",
+        "object":"grill",
+        "x":"object['position'][0]",
+        "y":"object['position'][1]",
+        "z":"object['position'][2]",
         "set":"set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm=2, value=1)"
     },
     "gripper": {
-        "x":"steak['position'][0]",
-        "y":"steak['position'][1]",
-        "z":"steak['position'][2]",
+        "object":"steak",
+        "x":"object['position'][0]",
+        "y":"object['position'][1]",
+        "z":"object['position'][2]",
         "set":"set_voxel_by_radius(gripper_map, [x,y,z], radius_cm=1, value=0)"
     },
     "rotation": {
-        "target_rotation":"vec2quat(-steak['normal'])",
+        "object":"steak",
+        "target_rotation":"vec2quat(-object['normal'])",
         "set":"rotation_map[:, :, :] = target_rotation"
     },
     "velocity": {
@@ -159,24 +170,27 @@ Some external library APIs:
     "Action" : "move to 10cm on top of the plate",
     "movable" : "gripper",
     "affordable" : {
-        "max_z":"plate['aabb'][1][2]",
-        "x":"plate['position'][0]",
-        "y":"plate['position'][1]",
+        "object":"plate",
+        "max_z":"object['aabb'][1][2]",
+        "x":"object['position'][0]",
+        "y":"object['position'][1]",
         "z":"max_z + cm2index(10, 'z')",
         "target_affordance":1,
         "set":"affordance_map[x, y, z] = target_affordance"
     },
     "avoid" : {
-        "x":"grill['position'][0]",
-        "y":"grill['position'][1]",
-        "z":"grill['position'][2]",
+        "object":"grill",
+        "x":"object['position'][0]",
+        "y":"object['position'][1]",
+        "z":"object['position'][2]",
         "set":"set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm=5, value=1)"
     },
     "gripper": {
         "set":"default"
     },
     "rotation": {
-        "target_rotation":"vec2quat(-plate['normal'])",
+        "object":"plate",
+        "target_rotation":"vec2quat(-object['normal'])",
         "set":"rotation_map[:, :, :] = target_rotation"
     },
     "velocity": {
@@ -200,7 +214,8 @@ Some external library APIs:
         "set":"default"
     },
     "rotation": {
-        "target_rotation":"qmult(vec2quat(-plrotation_map[:, :, :] = target_rotationate['normal']), euler2quat(-np.pi / 4, 0, 0))",
+        "object":"plate",
+        "target_rotation":"qmult(vec2quat(-object['normal']), euler2quat(-np.pi / 4, 0, 0))",
         "set":"rotation_map[:, :, :] = target_rotation"
     },
     "velocity": {

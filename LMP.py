@@ -103,17 +103,41 @@ class LMP:
             gripper_map = lmp_env._get_default_voxel_map('gripper')()
             avoidance_map = lmp_env._get_default_voxel_map('obstacle')()
 
+            affordable = action_state["affordable"]
+            avoidance = action_state["avoid"]
+            gripper = action_state["gripper"]
+            rotation = action_state["rotation"]
+            velocity = action_state["velocity"]
+
+            affordable_set = affordable["set"]
+            avoidance_set = avoidance["set"]
+            gripper_set = gripper["set"]
+            rotation_set = rotation["set"]
+            velocity_set = velocity["set"]
+
             movable = action_state["movable"]
-            movable_var = object_state[movable]
+            movable_var = object_state[movable]["obs"]
 
-            affordable_set = action_state["affordable"]["set"]
-            avoidance_set = action_state["avoid"]["set"]
-            gripper_set = action_state["gripper"]["set"]
-            rotation_set = action_state["rotation"]["set"]
-            velocity_set = action_state["velocity"]["set"]
+            if affordable_set != "default" :
+                affordable_map = lmp_env._get_default_voxel_map('target')()
+                affordable_var = affordable["object"]
+                object = object_state[affordable_var]["obs"]
+                x = eval(affordable["x"])
+                y = eval(affordable["y"])
+                z = eval(affordable["z"])
+                target_affordance = affordable["target_affordance"]
+                affordable_map[x,y,z] = target_affordance
+                print(affordable_map)
 
-
-
+            if avoidance_set != "default" :
+                avoidance_var = action_state["avoid"]["object"]
+            if gripper_set != "default" :
+                gripper_var = action_state["gripper"]["object"]
+            if rotation_set != "default" :
+                rotation_var = action_state["rotation"]["object"]
+            if velocity_set != "default" :
+                velocity_var = action_state["velocity"]["object"]
+        
 
             new_global_vars = {
                 'state': object_state,
@@ -136,6 +160,7 @@ class LMP:
             print(f"Action: {action}")
             filepath = self.get_last_filename(self.mask_path)
             action_state  = self._vlmapi_call(filepath,query=query,planner=planning_,action=action,objects=self._context)
+            print(action_state)
             self.__execute_action_state(action_state, lock, lmp_env)
             action = planning.pop(0)
 
