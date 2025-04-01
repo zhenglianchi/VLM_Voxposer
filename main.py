@@ -45,26 +45,20 @@ set_lmp_objects(lmps, env.get_object_names())
 # set the random instruction prompt text
 instruction = np.random.choice(descriptions)
 
-bbox_entities = lmp_env.update_box()
-
 # 创建锁
 lock = threading.Lock()
+stop_thread = threading.Event()
 
+def update_state(lock,stop_thread):
+    lmp_env.update_mask_entities(lock)
+    stop_thread.wait()
 
-def update_state(bbox_entities,lock):
-    print("开始更新mask")
-    lmp_env.update_mask_entities(bbox_entities,lock)
+def run_voxposer_ui(instruction,lock,stop_thread):
+    voxposer_ui(instruction,lock)
+    stop_thread.set()
 
-def run_voxposer_ui(instruction,lock):
-    print("开始生成代码")
-    try:
-        voxposer_ui(instruction,lock)
-    except Exception as e:
-        print(f"Error in thread 2: {e}")
-
-
-thread1 = threading.Thread(target=update_state, args=(bbox_entities,lock))
-thread2 = threading.Thread(target=run_voxposer_ui, args=(instruction,lock))
+thread1 = threading.Thread(target=update_state, args=(lock,stop_thread))
+thread2 = threading.Thread(target=run_voxposer_ui, args=(instruction,lock,stop_thread))
 
 thread1.start()
 
@@ -75,7 +69,3 @@ while not os.path.exists(json_name):
 thread2.start()
 
 thread2.join()
-
-os.remove(json_name)
-
-os._exit(0)

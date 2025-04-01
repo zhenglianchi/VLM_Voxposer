@@ -8,7 +8,7 @@ from scipy.ndimage import distance_transform_edt
 import transforms3d
 from controllers import Controller
 import open3d as o3d
-from VLM_demo import  write_state, get_world_bboxs_list,show_mask,use_sam
+from VLM_demo import  write_state, get_world_bboxs_list,show_mask,use_sam,read_state
 from PIL import Image
 from transforms3d.quaternions import axangle2quat
 import matplotlib.pyplot as plt
@@ -109,18 +109,16 @@ class LMP_interface():
       return object_obs
   
 
-  def update_box(self):
-      rgb, _, _ = self.get_rgb_depth(self.cam, get_rgb=True, get_depth=False, get_pcd=False)
+  def update_box(self,num):
+      rgb, _, pcd = self.get_rgb_depth(self.cam, get_rgb=True, get_depth=True, get_pcd=True)
 
       image = Image.fromarray(np.array(rgb))
-      image_path = "tmp/rgb.jpeg"
+      image_path = f"tmp/images/rgb_{num}.jpeg"
       image.save(image_path)
 
       objects = self._env.get_object_names()
-      print("正在获取目标框")
       bbox = get_world_bboxs_list(image_path, objects)
-      print("获取目标框成功")
-      return bbox
+      return bbox,rgb,pcd
   
   def _capture_rgb(self):
     self.cam.handle_explicitly()
@@ -128,21 +126,19 @@ class LMP_interface():
     frame = Image.fromarray(np.clip((rgb * 255.).astype(np.uint8), 0, 255)).convert("RGB")
     return frame
 
-  def update_mask_entities(self, bbox_entities,lock):
-      #frame = self._capture_rgb()
-      state = {}
+  def update_mask_entities(self,lock):
+      state_json_path = f"tmp/state_{self.cam_name}.json"
+      state = read_state(state_json_path,lock)
       plt.figure(figsize=(20, 20))
+      num = 0
       while True:
         start_time = time.time()
-        frame = self._capture_rgb()
-        _, _, pcd_ = self.get_rgb_depth(self.cam, get_rgb=False, get_depth=True, get_pcd=True)
-
+        bbox_entities,frame,pcd_ = self.update_box(num)
         plt.clf()
         plt.imshow(frame)
         try:
           bbox = [item["bbox"] for item in bbox_entities]
           masks_ = use_sam(frame, bbox)
-          print(masks_.shape)
           for (index,item) in enumerate(bbox_entities):
               points, masks, normals = [], [], []
               points.append(pcd_.reshape(-1, 3))
@@ -191,14 +187,14 @@ class LMP_interface():
           state['workspace'] = self.get_table_obs()
 
           # 将state保存为JSON文件
-          state_json_path = f"tmp/state_{self.cam_name}.json"
           write_state(state_json_path, state,lock)
           end_time = time.time()  # 记录结束时间
           elapsed_time_ms = (end_time - start_time) * 1000  # 计算并转换为毫秒
           print("update state success!"+f"Consumed time: {elapsed_time_ms:.2f} ms")
           plt.axis('off')
           plt.draw()
-          plt.savefig(f"tmp/state_{self.cam_name}.jpeg", bbox_inches='tight', pad_inches=0)
+          plt.savefig(f"tmp/masks/mask_{num}.jpeg", bbox_inches='tight', pad_inches=0)
+          num+=1
           #plt.pause(0.01)
 
         except Exception as e:
@@ -449,7 +445,8 @@ class LMP_interface():
       elif type == 'velocity':
         voxel_map = np.ones((self._map_size, self._map_size, self._map_size))
       elif type == 'gripper':
-        voxel_map = np.ones((self._map_size, self._map_size, self._map_size)) #* self._env.get_last_gripper_action()
+        # 这里gripper:1->0为张开;0->1为闭合
+        voxel_map = np.ones((self._map_size, self._map_size, self._map_size)) * self._env.get_last_gripper_action()
       elif type == 'rotation':
         voxel_map = np.zeros((self._map_size, self._map_size, self._map_size, 4))
         voxel_map[:, :, :] = self._env.get_ee_quat()

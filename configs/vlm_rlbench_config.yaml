@@ -33,7 +33,7 @@ lmp_config:
   lmps:
     prompt_fname: action_mode
     planner_prompt_fname : planner_mode
-    model: qwen2.5-72b-instruct
+    model: qwen-max-latest
     planner_model: qwen2.5-vl-72b-instruct
     max_tokens: 2048
     temperature: 0

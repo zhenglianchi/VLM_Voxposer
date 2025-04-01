@@ -2,9 +2,9 @@ from time import sleep
 from openai import RateLimitError, APIConnectionError,OpenAI
 from utils import load_prompt
 import time
-from VLM_demo import encode_image
-from VLM_demo import read_state
+from VLM_demo import encode_image,read_state,VLMs_state
 import json
+import os
 
 
 class LMP:
@@ -21,16 +21,17 @@ class LMP:
         self.gvars = merge_dicts([self._fixed_vars, self._variable_vars])
         self.lvars = self.gvars
         self._context = None
+        self.mask_path = "./tmp/masks/"
+        self.image_path = "./tmp/images/"
+        self.state_json_path = "./tmp/state_front.json"
         #set your api_key Qwen
         self.api_key= "sk-df55df287b2c420285feb77137467576"
         self.base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
-        self.state_json_path = "./tmp/state_front.json"
-        #set your api_key lingyi
-        #self.api_key= "f972734155394670bf3d86d36884b7ed"
-        #self.base_url="https://api.lingyiwanwu.com/v1"
-        #zhipu
-        #self.api_key="875ccefccb36535614c10fa4d0a62f97.rUp0uGBiIQIy4vD5"
-        #self.base_url="https://open.bigmodel.cn/api/paas/v4/"
+
+    def get_last_filename(self,folder):
+        filenames = os.listdir(folder)
+        filename = filenames[-1]
+        return f"{folder}{filename}"
 
     def build_prompt(self, query, model):
         prompt = self._base_prompt
@@ -44,9 +45,8 @@ class LMP:
 
         client = OpenAI(api_key=self.api_key,base_url=self.base_url)
         
-        #这里加图像的prompt
-        image_path = "./tmp/state_front.jpeg"
-        base64_image = encode_image(image_path)
+        filepath = self.get_last_filename(self.image_path)
+        base64_image = encode_image(filepath)
 
         completion = client.chat.completions.create(
             model=model,
@@ -76,7 +76,7 @@ class LMP:
     def _api_call(self, **kwargs):
         # check whether completion endpoint or chat endpoint is used
         if kwargs['model'] != 'gpt-3.5-turbo-instruct' and \
-            any([chat_model in kwargs['model'] for chat_model in ['gpt-3.5', 'gpt-4', 'yi-large','glm-4-flash',"qwen2.5-72b-instruct"]]):
+            any([chat_model in kwargs['model'] for chat_model in ['gpt-3.5', 'gpt-4', 'yi-large','glm-4-flash',"qwen-max-latest"]]):
             # add special prompt for chat endpoint
             user1 = kwargs.pop('prompt')
             user_query = kwargs.pop('user_query')
@@ -121,7 +121,8 @@ class LMP:
             base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
         )
 
-        base64_image = encode_image("./tmp/state_front.jpeg")
+        filepath = self.get_last_filename(self.mask_path)
+        base64_image = encode_image(filepath)
 
         completion = client.chat.completions.create(
             model="qwen2.5-vl-72b-instruct",  
@@ -140,12 +141,22 @@ class LMP:
 
     def __call__(self, query, lock):
         prompt, user_query, planning = self.build_prompt(query,self._cfg['planner_model'])
-    
+        planning_ = planning.copy()
         action = planning.pop(0)
         planning_completed = False
         while not planning_completed:
             print(f"Action: {action}")
             action_completed = False
+            filepath = self.get_last_filename(self.mask_path)
+            action_state  = VLMs_state(filepath,query=query,planner=planning_,action=action,objects=self._context)
+            print(action_state)
+            if planning == []:
+                break
+            action = planning.pop(0)
+            continue
+            '''
+            修改下面的代码使其execute json
+            '''
             try:
                 generate_code = self._api_call(
                     prompt=prompt,
@@ -157,9 +168,9 @@ class LMP:
                     action = action,
                 )
                 while True:
-                    state = self.get_state(self.state_json_path,lock)
+                    object_state = self.get_state(self.state_json_path,lock)
                     new_global_vars = {
-                        'state': state,
+                        'state': object_state,
                     }
                     self.gvars.update(new_global_vars)
                     exec(generate_code, self.gvars, self.lvars)

@@ -9,6 +9,7 @@ import json_numpy
 import matplotlib.pyplot as plt
 import time
 import torch
+from utils import load_prompt
 import sys
 sys.path.append("EdgeSAM/")
 from EdgeSAM.edge_sam import sam_model_registry, SamPredictor
@@ -163,7 +164,7 @@ def show_box(box, ax):
     w, h = box[2] - box[0], box[3] - box[1]
     ax.add_patch(plt.Rectangle((x0, y0), w, h, edgecolor='green', facecolor=(0, 0, 0, 0), lw=2)) 
 
-def show_mask(mask, ax, random_color=False):
+def show_mask(mask ,ax, random_color=False):
     if random_color:
         color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
     else:
@@ -182,37 +183,7 @@ def get_response(url,query):
 
 
 
-def get_action(image_path, instruction):
-
-    client = OpenAI(
-        api_key="sk-df55df287b2c420285feb77137467576",
-        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-    )
-
-    base64_image = encode_image(image_path)
-    prompt = '''
-    {
-        "objects" : ['blue block', 'yellow block', 'mug'],
-        "Query" : "place the blue block on the yellow block, and avoid the mug at all time.",
-        "action" : ["grasp the blue block while keeping at least 15cm away from the mug","back to default pose","move to 5cm on top of the yellow block while keeping at least 15cm away from the mug","open gripper"]
-    }
-    '''
-
-    completion = client.chat.completions.create(
-        model="qwen2.5-vl-72b-instruct",  
-        messages=[{"role": "user","content": [
-                {"type": "text","text": f"This is a robotic arm operation scene. I want {instruction}, Please arrange the robot arm movements according to the given picture." + f"The format of output should be like {prompt}"},
-                {"type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}, 
-                }
-                ]}]
-        )
-
-    action = json.loads(completion.choices[0].message.content[7:-3] , strict=False)
-
-    return action
-
-def get_state(image_path, instruction, objects):
+def VLMs_state(image_path, query, planner ,action, objects):
 
     client = OpenAI(
         api_key="sk-df55df287b2c420285feb77137467576",
@@ -221,30 +192,23 @@ def get_state(image_path, instruction, objects):
 
     base64_image = encode_image(image_path)
 
-    prompt = '''{
-        "Objects" : ["blue block", "yellow block", "mug"],
-        "Query" : "grasp the blue block while keeping at least 15cm away from the mug",
-        "affordable" : ["blue block"],
-        "avoid" : ["mug","yellow block"],
-        "blue block" : {},
-        "yellow block" : {},
-        "mug" : {}
-    }'''
+    prompt = load_prompt(f"vlm_rlbench/state.txt")
 
     completion = client.chat.completions.create(
         model="qwen2.5-vl-72b-instruct",  
         messages=[{"role": "user","content": [
-                {"type": "text","text": f"This is a robotic arm operation scene. I want {instruction}, and objects = {objects} ,Please tell me what objects I should approach and catch, and what objects I should avoid. " + f"The format of output should be like {prompt}. Query:{instruction}."},
+                {"type": "text","text": f"This is a robotic arm operation scene." + f"The format of output should be like {prompt}.\n Objects : {objects}\nQuery : {query}\nPlanner : {planner}\nAction : {action}\nPlease just give me the corresponding json, no explanation and no text required"},
                 {"type": "image_url",
                 "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}, 
                 }
                 ]}]
         )
 
-    #print(completion.choices[0].message.content[7:-3])
-    state = json.loads(completion.choices[0].message.content[7:-3], strict=False)
+    resstr = completion.choices[0].message.content.replace("```","").replace("json","")
+
+    state = json.loads(resstr)
 
     return state
-    
 
+    
 
