@@ -47,18 +47,15 @@ instruction = np.random.choice(descriptions)
 
 # 创建锁
 lock = threading.Lock()
-stop_thread = threading.Event()
 
-def update_state(lock,stop_thread):
+def update_state(lock):
     lmp_env.update_mask_entities(lock)
-    stop_thread.wait()
 
-def run_voxposer_ui(instruction,lock,stop_thread):
-    voxposer_ui(instruction,lock)
-    stop_thread.set()
+def run_voxposer_ui(instruction,lock,lmp_env):
+    voxposer_ui(instruction,lock,lmp_env)
 
-thread1 = threading.Thread(target=update_state, args=(lock,stop_thread))
-thread2 = threading.Thread(target=run_voxposer_ui, args=(instruction,lock,stop_thread))
+thread1 = threading.Thread(target=update_state, args=(lock,))
+thread2 = threading.Thread(target=run_voxposer_ui, args=(instruction,lock,lmp_env,))
 
 thread1.start()
 
@@ -69,3 +66,5 @@ while not os.path.exists(json_name):
 thread2.start()
 
 thread2.join()
+
+thread1.join()

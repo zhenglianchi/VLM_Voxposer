@@ -182,33 +182,5 @@ def get_response(url,query):
         print("Error:", response.status_code, response.text)
 
 
-
-def VLMs_state(image_path, query, planner ,action, objects):
-
-    client = OpenAI(
-        api_key="sk-df55df287b2c420285feb77137467576",
-        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-    )
-
-    base64_image = encode_image(image_path)
-
-    prompt = load_prompt(f"vlm_rlbench/state.txt")
-
-    completion = client.chat.completions.create(
-        model="qwen2.5-vl-72b-instruct",  
-        messages=[{"role": "user","content": [
-                {"type": "text","text": f"This is a robotic arm operation scene." + f"The format of output should be like {prompt}.\n Objects : {objects}\nQuery : {query}\nPlanner : {planner}\nAction : {action}\nPlease just give me the corresponding json, no explanation and no text required"},
-                {"type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}, 
-                }
-                ]}]
-        )
-
-    resstr = completion.choices[0].message.content.replace("```","").replace("json","")
-
-    state = json.loads(resstr)
-
-    return state
-
     
 

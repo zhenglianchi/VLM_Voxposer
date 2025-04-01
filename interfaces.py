@@ -128,7 +128,7 @@ class LMP_interface():
 
   def update_mask_entities(self,lock):
       state_json_path = f"tmp/state_{self.cam_name}.json"
-      state = read_state(state_json_path,lock)
+      state = {}
       plt.figure(figsize=(20, 20))
       num = 0
       while True:
@@ -182,6 +182,13 @@ class LMP_interface():
               obj_normals = np.asarray(pcd_downsampled.normals)
 
               state[label]= self.get_obs(obj_points, obj_normals, label)
+              # 获取bbox的中心坐标
+              x_min, y_min, x_max, y_max = bbox[index]
+              center_x = (x_min + x_max) / 2
+              center_y = (y_min + y_max) / 2
+
+              # 在中心位置显示label
+              plt.text(center_x, center_y, label, color='white', ha='center', va='center', fontsize=12, weight='bold')
 
           state['gripper'] = self.get_ee_obs()
           state['workspace'] = self.get_table_obs()
