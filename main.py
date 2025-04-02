@@ -8,6 +8,7 @@ from rlbench import tasks
 import threading
 import time
 import os
+import time
 
 #load config
 config_path = "configs/vlm_rlbench_config.yaml"
@@ -58,6 +59,7 @@ thread1 = threading.Thread(target=update_state, args=(lock,))
 thread2 = threading.Thread(target=run_voxposer_ui, args=(instruction,lock,lmp_env,))
 
 thread1.start()
+time.sleep(1)
 
 json_name = "./tmp/state_front.json"
 while not os.path.exists(json_name):

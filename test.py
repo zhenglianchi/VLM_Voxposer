@@ -17,14 +17,16 @@
         'x': "object['position'][0]", 
         'y': "object['position'][1]", 
         'z': "object['position'][2]", 
-        'set': 'set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm=5, value=1)'
+        'radius_cm': 5,
+        'set': 'set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm=radius_cm, value=1)'
         }, 
     'gripper': {
         'object':'rubbish', 
         'x': "object['position'][0]", 
         'y': "object['position'][1]", 
         'z': "object['position'][2]", 
-        'set': 'set_voxel_by_radius(gripper_map, [x,y,z], radius_cm=1, value=0)'
+        'radius_cm': 1,
+        'set': 'set_voxel_by_radius(gripper_map, [x,y,z], radius_cm=radius_cm, value=0)'
         }, 
     'rotation': {
         'object':'rubbish', 

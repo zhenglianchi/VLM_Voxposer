@@ -47,14 +47,18 @@ Some external library APIs:
         "x":"object['position'][0]",
         "y":"object['position'][1]",
         "z":"object['position'][2]",
-        "set":"set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm=5, value=1)"
+        "radius_cm": 5,
+        "value": 1,
+        "set":"set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm, value)"
     },
     "gripper": {
         "object":"blue_block",
         "x":"object['position'][0]",
         "y":"object['position'][1]",
         "z":"object['position'][2]",
-        "set":"set_voxel_by_radius(gripper_map, [x,y,z], radius_cm=1, value=0)"
+        "radius_cm": 1,
+        "value":0,
+        "set":"set_voxel_by_radius(gripper_map, [x,y,z], radius_cm, value)"
     },
     "rotation": {
         "object":"blue_block",
@@ -87,7 +91,9 @@ Some external library APIs:
         "x":"object['position'][0]",
         "y":"object['position'][1]",
         "z":"object['position'][2]",
-        "set":"set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm=5, value=1)"
+        "radius_cm": 5,
+        "value":1,
+        "set":"set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm, value)"
     },
     "gripper": {
         "set":"default"
@@ -144,14 +150,18 @@ Some external library APIs:
         "x":"object['position'][0]",
         "y":"object['position'][1]",
         "z":"object['position'][2]",
-        "set":"set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm=2, value=1)"
+        "radius_cm": 2,
+        "value":1,
+        "set":"set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm, value)"
     },
     "gripper": {
         "object":"steak",
         "x":"object['position'][0]",
         "y":"object['position'][1]",
         "z":"object['position'][2]",
-        "set":"set_voxel_by_radius(gripper_map, [x,y,z], radius_cm=1, value=0)"
+        "radius_cm": 5,
+        "value":0,
+        "set":"set_voxel_by_radius(gripper_map, [x,y,z], radius_cm, value)"
     },
     "rotation": {
         "object":"steak",
@@ -183,7 +193,9 @@ Some external library APIs:
         "x":"object['position'][0]",
         "y":"object['position'][1]",
         "z":"object['position'][2]",
-        "set":"set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm=5, value=1)"
+        "radius_cm": 5,
+        "value":1,
+        "set":"set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm, value)"
     },
     "gripper": {
         "set":"default"

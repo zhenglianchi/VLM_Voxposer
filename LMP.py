@@ -1,10 +1,13 @@
-from time import sleep
 from openai import RateLimitError, APIConnectionError,OpenAI
 from utils import load_prompt
 import time
 from VLM_demo import encode_image,read_state
 import json
 import os
+from transforms3d.euler import euler2quat, quat2euler
+from transforms3d.quaternions import qmult, qinverse
+import numpy as np
+from scipy.spatial.transform import Rotation as R
 
 
 class LMP:
@@ -18,8 +21,6 @@ class LMP:
         self._stop_tokens = [self._cfg['stop']]
         self._fixed_vars = fixed_vars
         self._variable_vars = variable_vars
-        self.gvars = merge_dicts([self._fixed_vars, self._variable_vars])
-        self.lvars = self.gvars
         self._context = None
         self.mask_path = "./tmp/masks/"
         self.image_path = "./tmp/images/"
@@ -127,26 +128,47 @@ class LMP:
                 z = eval(affordable["z"])
                 target_affordance = affordable["target_affordance"]
                 affordable_map[x,y,z] = target_affordance
-                print(affordable_map)
 
             if avoidance_set != "default" :
                 avoidance_var = action_state["avoid"]["object"]
+                if avoidance_var not in object_state.keys():
+                    print(f"Object {avoidance_var} not found in scene in this step.")
+                    pass
+                object = object_state[avoidance_var]["obs"]
+                x = eval(avoidance["x"])
+                y = eval(avoidance["y"])
+                z = eval(avoidance["z"])
+                radius_cm = avoidance["radius_cm"]
+                value = avoidance["value"]
+                avoidance_map = lmp_env.set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm, value)
+                
             if gripper_set != "default" :
+                if "object" not in action_state["gripper"].keys():
+                    gripper_map[:, :, :] = 1
+                    pass
                 gripper_var = action_state["gripper"]["object"]
+                object = object_state[gripper_var]["obs"]
+                x = eval(gripper["x"])
+                y = eval(gripper["y"])
+                z = eval(gripper["z"])
+                radius_cm = gripper["radius_cm"]
+                value = gripper["value"]
+                gripper_map = lmp_env.set_voxel_by_radius(gripper_map, [x,y,z], radius_cm, value)
+
             if rotation_set != "default" :
                 rotation_var = action_state["rotation"]["object"]
+                if rotation_var not in object_state.keys():
+                    print(f"Object {rotation_var} not found in scene in this step.")
+                    pass
+                object = object_state[rotation_var]["obs"]
+                target_rotation = eval(rotation["target_rotation"])
+                rotation_map[:, :, :] = target_rotation
+
             if velocity_set != "default" :
-                velocity_var = action_state["velocity"]["object"]
-        
+                target_velocity = velocity["target_velocity"]
+                velocity_map[:] = target_velocity
 
-            new_global_vars = {
-                'state': object_state,
-            }
-            self.gvars.update(new_global_vars)
-
-
-            exec(generate_code, self.gvars, self.lvars)
-            stop = self.lvars["stop"]
+            stop = lmp_env.execute(movable_var,affordable_map,avoidance_map,rotation_map,velocity_map,gripper_map)
             # 到达目标位置
             if stop:
                 break
@@ -193,3 +215,26 @@ def exec_safe(code_str, gvars=None, lvars=None):
         print(f'Error executing code:\n{code_str}')
         raise e
     
+
+def vec2quat(vec):
+    """
+    将向量转换为四元数。
+    
+    参数:
+    vector (np.array): 一个三维向量，表示方向。
+    
+    返回:
+    np.array: 表示旋转的四元数。
+    """
+    vec = vec / np.linalg.norm(vec)
+
+    # 目标方向是z轴
+    target = np.array([0, 0, 1])
+
+    # 计算旋转
+    # 使用Rotation.from_rotvec来获取从z轴到v的旋转
+    rotation = R.align_vectors([vec], [target])[0]
+
+    # 获取四元数
+    quat = rotation.as_quat()  # 返回四元数 [x, y, z, w] 格式
+    return quat

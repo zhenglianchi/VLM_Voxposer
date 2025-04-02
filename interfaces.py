@@ -246,15 +246,6 @@ class LMP_interface():
       velocity_map: callable function that generates a 3D numpy array, the velocity voxel map
       gripper_map: callable function that generates a 3D numpy array, the gripper voxel map
     """
-    # initialize default voxel maps if not specified
-    '''if rotation_map is None:
-      rotation_map = self._get_default_voxel_map('rotation')()
-    if velocity_map is None:
-      velocity_map = self._get_default_voxel_map('velocity')()
-    if gripper_map is None:
-      gripper_map = self._get_default_voxel_map('gripper')()
-    if avoidance_map is None:
-      avoidance_map = self._get_default_voxel_map('obstacle')()'''
 
     # 如果需要移动的是末端执行器则 object_centric=False，否则为True
     object_centric = (not movable_obs['name'] in EE_ALIAS)
