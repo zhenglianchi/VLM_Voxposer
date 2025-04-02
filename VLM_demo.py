@@ -9,7 +9,6 @@ import json_numpy
 import matplotlib.pyplot as plt
 import time
 import torch
-from utils import load_prompt
 import sys
 sys.path.append("EdgeSAM/")
 from EdgeSAM.edge_sam import sam_model_registry, SamPredictor
@@ -127,14 +126,14 @@ def smart_resize(image_path, factor = 28, vl_high_resolution_images = False):
 def get_world_bboxs_list(image_path,objects):
 
     client = OpenAI(
-        api_key="sk-df55df287b2c420285feb77137467576",
+        api_key="sk-6c92e8dc39534beea619a0470d8a2571",
         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
     )
 
     base64_image = encode_image(image_path)
 
     completion = client.chat.completions.create(
-        model="qwen2.5-vl-72b-instruct",  
+        model="qwen2.5-vl-72b-instruct", 
         messages=[{"role": "user","content": [
                 {"type": "text","text": f"This is a robotic arm operation scene, you need to detect {objects}. Detect all objects in the image and return their locations in the form of coordinates, don't give up any information about the details. The format of output should be like" +"{“bbox”: [x1, y1, x2, y2], “label”: the name of this object in English.} not {“bbox_2d”: [x1, y1, x2, y2], “label”: the name of this object in Chinese}"},
                 {"type": "image_url",

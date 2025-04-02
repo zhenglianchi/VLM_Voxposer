@@ -16,8 +16,9 @@ class LMP:
         self._name = name
         self._cfg = cfg
         self._debug = debug
-        self._base_prompt = load_prompt(f"{env}/{self._cfg['prompt_fname']}.txt")
         self._planner_prompt = load_prompt(f"{env}/{self._cfg['planner_prompt_fname']}.txt")
+        self._action_state_prompt = load_prompt(f"{env}/{self._cfg['vision_prompt_fname']}.txt")
+
         self._stop_tokens = [self._cfg['stop']]
         self._fixed_vars = fixed_vars
         self._variable_vars = variable_vars
@@ -26,7 +27,7 @@ class LMP:
         self.image_path = "./tmp/images/"
         self.state_json_path = "./tmp/state_front.json"
         #set your api_key Qwen
-        self.api_key= "sk-df55df287b2c420285feb77137467576"
+        self.api_key= "sk-6c92e8dc39534beea619a0470d8a2571"
         self.base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
 
     def get_last_filename(self,folder):
@@ -34,7 +35,7 @@ class LMP:
         filename = filenames[-1]
         return f"{folder}{filename}"
 
-    def generate_planning(self, query, model):
+    def generate_planning(self, query):
         user_query = f'{self._cfg["query_prefix"]}{query}{self._cfg["query_suffix"]}'
 
         planner_prompt = self._planner_prompt
@@ -48,7 +49,7 @@ class LMP:
         base64_image = encode_image(filepath)
 
         completion = client.chat.completions.create(
-            model=model,
+            model=self._cfg['vision_model'],
             messages=[{"role": "user","content": [
                 {"type": "text","text": f"This is a robotic arm operation scene image.\n{planner_prompt}\nThe above are some examples of planning, please give the corresponding planning according to the image I gave you next:\n{user_query}. The output format likely is\n" + "planner : ['', '', '', '']\nOther than that, don't give me any superfluous information and hints"},
                 {"type": "image_url",
@@ -68,17 +69,14 @@ class LMP:
       return state
 
     def _vlmapi_call(self,image_path, query, planner ,action, objects):
-        client = OpenAI(
-            api_key="sk-df55df287b2c420285feb77137467576",
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-        )
+        client = OpenAI(api_key=self.api_key,base_url=self.base_url)
 
         base64_image = encode_image(image_path)
 
-        prompt = load_prompt(f"vlm_rlbench/state.txt")
+        prompt = self._action_state_prompt
 
         completion = client.chat.completions.create(
-            model="qwen2.5-vl-72b-instruct",  
+            model=self._cfg['vision_model'],  
             messages=[{"role": "user","content": [
                     {"type": "text","text": f"This is a robotic arm operation scene." + f"The format of output should be like {prompt}.\n Objects : {objects}\nQuery : {query}\nPlanner : {planner}\nAction : {action}\nPlease just give me the corresponding json, no explanation and no text required"},
                     {"type": "image_url",
@@ -175,7 +173,7 @@ class LMP:
 
 
     def __call__(self, query, lock, lmp_env):
-        planning = self.generate_planning(query,self._cfg['planner_model'])
+        planning = self.generate_planning(query)
         planning_ = planning.copy()
         action = planning.pop(0)
         while len(planning) != 0:
