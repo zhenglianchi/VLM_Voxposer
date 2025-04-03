@@ -31,32 +31,30 @@ Some external library APIs:
 {
     "Objects" : ["blue block", "yellow block", "mug"],
     "Query" : "place the blue block on the yellow block, and avoid the mug at all time.",
-    "Planner" : ["grasp the blue block at a quarter of the speed while keeping at least 5cm away from the mug", "move to 5cm on top of the yellow block while keeping at least 5cm away from the mug", "open gripper"],
-    "Action" : "grasp the blue block at a quarter of the speed while keeping at least 5cm away from the mug",
+    "Planner" : ["grasp the blue block at a quarter of the speed while keeping at least 2cm away from the mug", "move to 2cm on top of the yellow block while keeping at least 2cm away from the mug", "open gripper"],
+    "Action" : "grasp the blue block at a quarter of the speed",
     "movable" : "gripper",
     "affordable" : {
         "object":"blue_block",
-        "x":"object['position'][0]",
-        "y":"object['position'][1]",
-        "z":"object['position'][2]",
+        "center_x, center_y, center_z":"object['position']",
+        "(min_x, min_y, min_z), (max_x, max_y, max_z)":"object['aabb']",
+        'x':'center_x',
+        'y':'center_y',
+        'z':'center_z',
         "target_affordance":1,
         "set":"affordance_map[x, y, z] = target_affordance"
     },
     "avoid" : {
-        "object":"mug",
-        "x":"object['position'][0]",
-        "y":"object['position'][1]",
-        "z":"object['position'][2]",
-        "radius_cm": 5,
-        "value": 1,
-        "set":"set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm, value)"
+        "set":"default"
     },
     "gripper": {
         "object":"blue_block",
-        "x":"object['position'][0]",
-        "y":"object['position'][1]",
-        "z":"object['position'][2]",
-        "radius_cm": 1,
+        "center_x, center_y, center_z":"object['position']",
+        "(min_x, min_y, min_z), (max_x, max_y, max_z)":"object['aabb']",
+        'x':'center_x',
+        'y':'center_y',
+        'z':'center_z',
+        "radius_cm": 0.5,
         "value":0,
         "set":"set_voxel_by_radius(gripper_map, [x,y,z], radius_cm, value)"
     },
@@ -74,24 +72,27 @@ Some external library APIs:
 {
     "Objects" : ["blue block", "yellow block", "mug"],
     "Query" : "place the blue block on the yellow block, and avoid the mug at all time.",
-    "Planner" : ["grasp the blue block at a quarter of the speed while keeping at least 5cm away from the mug", "move to 5cm on top of the yellow block while keeping at least 5cm away from the mug", "open gripper"],
-    "Action" : "move to 5cm on top of the yellow block while keeping at least 5cm away from the mug",
+    "Planner" : ["grasp the blue block at a quarter of the speed while keeping at least 2cm away from the mug", "move to 5cm on top of the yellow block while keeping at least 2cm away from the mug", "open gripper"],
+    "Action" : "move to 5cm on top of the yellow block while keeping at least 2cm away from the mug",
     "movable" : "gripper",
     "affordable" : {
         "object":"yellow_block",
-        "max_z":"object['aabb'][1][2]"
-        "x":"object['position'][0]",
-        "y":"object['position'][1]",
+        "center_x, center_y, center_z":"object['position']",
+        "(min_x, min_y, min_z), (max_x, max_y, max_z)":"object['aabb']",
+        "x":"center_x",
+        "y":"center_y",
         "z":"max_z + cm2index(5, 'z')",
         "target_affordance":1,
         "set":"affordance_map[x, y, z] = target_affordance"
     },
     "avoid" : {
         "object":"mug",
-        "x":"object['position'][0]",
-        "y":"object['position'][1]",
-        "z":"object['position'][2]",
-        "radius_cm": 5,
+        "center_x, center_y, center_z":"object['position']",
+        "(min_x, min_y, min_z), (max_x, max_y, max_z)":"object['aabb']",
+        "x":"center_x",
+        "y":"center_y",
+        "z":"center_z",
+        "radius_cm": 2,
         "value":1,
         "set":"set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm, value)"
     },
@@ -111,7 +112,7 @@ Some external library APIs:
 {
     "Objects" : ["blue block", "yellow block", "mug"],
     "Query" : "place the blue block on the yellow block, and avoid the mug at all time.",
-    "Planner" : ["grasp the blue block at a quarter of the speed while keeping at least 5cm away from the mug", "move to 5cm on top of the yellow block while keeping at least 5cm away from the mug", "open gripper"],
+    "Planner" : ["grasp the blue block at a quarter of the speed while keeping at least 2cm away from the mug", "move to 5cm on top of the yellow block while keeping at least 2cm away from the mug", "open gripper"],
     "Action" : "open gripper",
     "movable" : "gripper",
     "affordable" : {
@@ -139,27 +140,25 @@ Some external library APIs:
     "movable" : "gripper",
     "affordable" : {
         "object":"steak",
-        "x":"object['position'][0]",
-        "y":"object['position'][1]",
-        "z":"object['position'][2]",
+        "center_x, center_y, center_z":"object['position']",
+        "(min_x, min_y, min_z), (max_x, max_y, max_z)":"object['aabb']",
+        "x":"center_x",
+        "y":"center_y",
+        "z":"center_z",
         "target_affordance":1,
         "set":"affordance_map[x, y, z] = target_affordance"
     },
     "avoid" : {
-        "object":"grill",
-        "x":"object['position'][0]",
-        "y":"object['position'][1]",
-        "z":"object['position'][2]",
-        "radius_cm": 2,
-        "value":1,
-        "set":"set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm, value)"
+        "set":"default"
     },
     "gripper": {
         "object":"steak",
-        "x":"object['position'][0]",
-        "y":"object['position'][1]",
-        "z":"object['position'][2]",
-        "radius_cm": 5,
+        "center_x, center_y, center_z":"object['position']",
+        "(min_x, min_y, min_z), (max_x, max_y, max_z)":"object['aabb']",
+        "x":"center_x",
+        "y":"center_y",
+        "z":"center_z",
+        "radius_cm": 0.5,
         "value":0,
         "set":"set_voxel_by_radius(gripper_map, [x,y,z], radius_cm, value)"
     },
@@ -181,21 +180,16 @@ Some external library APIs:
     "movable" : "gripper",
     "affordable" : {
         "object":"plate",
-        "max_z":"object['aabb'][1][2]",
-        "x":"object['position'][0]",
-        "y":"object['position'][1]",
+        "center_x, center_y, center_z":"object['position']",
+        "(min_x, min_y, min_z), (max_x, max_y, max_z)":"object['aabb']",
+        "x":"center_x",
+        "y":"center_y",
         "z":"max_z + cm2index(10, 'z')",
         "target_affordance":1,
         "set":"affordance_map[x, y, z] = target_affordance"
     },
     "avoid" : {
-        "object":"grill",
-        "x":"object['position'][0]",
-        "y":"object['position'][1]",
-        "z":"object['position'][2]",
-        "radius_cm": 5,
-        "value":1,
-        "set":"set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm, value)"
+        "set":"default"
     },
     "gripper": {
         "set":"default"

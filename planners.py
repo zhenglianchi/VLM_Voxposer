@@ -27,7 +27,6 @@ class PathPlanner:
             path: (n, 3) np.ndarray, path
             info: dict, info
         """
-        print(f'[planners.py | {get_clock_time(milliseconds=True)}] start')
         # make copies
         start_pos = start_pos.copy()
         target_map  = target_map.copy()
@@ -45,9 +44,6 @@ class PathPlanner:
         stop_criteria = self._get_stop_criteria()
         # initialize path
         current_pos = start_pos
-        # optimize
-        print(f'[planners.py | {get_clock_time(milliseconds=True)}] start optimizing, start_pos: {start_pos}')
-
         # calculate all nearby voxels around current position
         all_nearby_voxels = self._calculate_nearby_voxel(current_pos, object_centric=object_centric)
         # calculate the score of all nearby voxels
@@ -55,8 +51,6 @@ class PathPlanner:
         # Find the minimum cost voxel
         steepest_idx = np.argmin(nearby_score)
         next_pos = all_nearby_voxels[steepest_idx]
-        print(f'[planners.py | {get_clock_time(milliseconds=True)}] optimization finished; next_pos: {next_pos}')
-        
         # check stop criteria
         if stop_criteria(next_pos, _costmap, self.config.stop_threshold):
             return next_pos,True

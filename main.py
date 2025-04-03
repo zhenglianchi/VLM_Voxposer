@@ -59,7 +59,7 @@ thread1 = threading.Thread(target=update_state, args=(lock,))
 thread2 = threading.Thread(target=run_voxposer_ui, args=(instruction,lock,lmp_env,))
 
 thread1.start()
-time.sleep(1)
+time.sleep(10)
 
 json_name = "./tmp/state_front.json"
 while not os.path.exists(json_name):
