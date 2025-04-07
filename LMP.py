@@ -1,5 +1,5 @@
 from openai import OpenAI
-from utils import load_prompt,normalize_vector
+from utils import load_prompt,normalize_vector,bcolors,get_clock_time
 from VLM_demo import encode_image,read_state
 import json
 import os
@@ -7,6 +7,14 @@ import numpy as np
 from transforms3d.euler import euler2quat,quat2euler
 from transforms3d.quaternions import qinverse,qmult
 from scipy.spatial.transform import Rotation as R
+import queue
+from scipy.ndimage import distance_transform_edt
+import threading
+import time
+
+# creating some aliases for end effector and table in case LLMs refer to them differently (but rarely this happens)
+EE_ALIAS = ['ee', 'endeffector', 'end_effector', 'end effector', 'gripper', 'hand']
+TABLE_ALIAS = ['table', 'desk', 'workstation', 'work_station', 'work station', 'workspace', 'work_space', 'work space']
 
 
 class LMP:
@@ -27,10 +35,16 @@ class LMP:
         self.api_key= "sk-6c92e8dc39534beea619a0470d8a2571"
         self.base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
 
+        self.shared_queue = queue.Queue()
+
     def get_last_filename(self,folder):
-        filenames = os.listdir(folder)
-        filename = filenames[-1]
-        return f"{folder}{filename}"
+        while True:
+            filenames = os.listdir(folder)
+            if len(filenames) != 0:
+                filename = filenames[-1]
+                return f"{folder}{filename}"
+            else:
+                time.sleep(1)
 
     def generate_planning(self, query):
         user_query = f'{self._cfg["query_prefix"]}{query}{self._cfg["query_suffix"]}'
@@ -87,79 +101,71 @@ class LMP:
         state = json.loads(resstr)
 
         return state
+
+
+    def __get__affordable_map(self,action_state,lmp_env,object_state):
+        affordable_map = None
+        affordable = action_state["affordable"]
+        affordable_set = affordable["set"]
+        if affordable_set != "default" :
+            affordable_map = lmp_env._get_default_voxel_map('target')()
+            affordable_var = affordable["object"]
+            object = object_state[affordable_var]["obs"]
+            center_x, center_y, center_z = eval(affordable["center_x, center_y, center_z"])
+            (min_x, min_y, min_z), (max_x, max_y, max_z) = eval(affordable["(min_x, min_y, min_z), (max_x, max_y, max_z)"])
+            x = eval(affordable["x"])
+            y = eval(affordable["y"])
+            z = eval(affordable["z"])
+            target_affordance = affordable["target_affordance"]
+            affordable_map[x,y,z] = target_affordance
+        return affordable_map
     
-
-    def __execute_action_state(self, action_state, lock, lmp_env):
-        global _map_size, _resolution
-        _map_size = lmp_env._map_size
-        _resolution = lmp_env._resolution
-        while True:
-            object_state = self.get_state(self.state_json_path,lock)
-
-            affordable_map = None
-            rotation_map = lmp_env._get_default_voxel_map('rotation')()
-            velocity_map = lmp_env._get_default_voxel_map('velocity')()
-            gripper_map = lmp_env._get_default_voxel_map('gripper')()
-            avoidance_map = lmp_env._get_default_voxel_map('obstacle')()
-
-            affordable = action_state["affordable"]
-            avoidance = action_state["avoid"]
-            gripper = action_state["gripper"]
-            rotation = action_state["rotation"]
-            velocity = action_state["velocity"]
-
-            affordable_set = affordable["set"]
-            avoidance_set = avoidance["set"]
-            gripper_set = gripper["set"]
-            rotation_set = rotation["set"]
-            velocity_set = velocity["set"]
-
-            movable = action_state["movable"]
-            movable_var = object_state[movable]["obs"]
-            
-            if affordable_set != "default" :
-                affordable_map = lmp_env._get_default_voxel_map('target')()
-                affordable_var = affordable["object"]
-                object = object_state[affordable_var]["obs"]
-                center_x, center_y, center_z = eval(affordable["center_x, center_y, center_z"])
-                (min_x, min_y, min_z), (max_x, max_y, max_z) = eval(affordable["(min_x, min_y, min_z), (max_x, max_y, max_z)"])
-                x = eval(affordable["x"])
-                y = eval(affordable["y"])
-                z = eval(affordable["z"])
-                target_affordance = affordable["target_affordance"]
-                affordable_map[x,y,z] = target_affordance
-
-            if avoidance_set != "default" :
-                avoidance_var = action_state["avoid"]["object"]
-                if avoidance_var not in object_state.keys():
-                    print(f"Object {avoidance_var} not found in scene in this step.")
-                    pass
-                object = object_state[avoidance_var]["obs"]
-                center_x, center_y, center_z = eval(avoidance["center_x, center_y, center_z"])
-                (min_x, min_y, min_z), (max_x, max_y, max_z) = eval(avoidance["(min_x, min_y, min_z), (max_x, max_y, max_z)"])
-                x = eval(avoidance["x"])
-                y = eval(avoidance["y"])
-                z = eval(avoidance["z"])
-                radius_cm = avoidance["radius_cm"]
-                value = avoidance["value"]
-                avoidance_map = set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm, value)
-                
-            if gripper_set != "default" :
-                if "object" not in action_state["gripper"].keys():
-                    gripper_map[:, :, :] = 1
-                    pass
-                gripper_var = action_state["gripper"]["object"]
-                object = object_state[gripper_var]["obs"]
-                center_x, center_y, center_z = eval(gripper["center_x, center_y, center_z"])
-                (min_x, min_y, min_z), (max_x, max_y, max_z) = eval(gripper["(min_x, min_y, min_z), (max_x, max_y, max_z)"])
-                x = eval(gripper["x"])
-                y = eval(gripper["y"])
-                z = eval(gripper["z"])
-                radius_cm = gripper["radius_cm"]
-                value = gripper["value"]
-                gripper_map = set_voxel_by_radius(gripper_map, [x,y,z], radius_cm, value)
-
-            '''if rotation_set != "default" :
+    def __get__avoidance_map(self,action_state,lmp_env,object_state):
+        avoidance_map = lmp_env._get_default_voxel_map('obstacle')()
+        avoidance = action_state["avoid"]
+        avoidance_set = avoidance["set"]
+        if avoidance_set != "default" :
+            avoidance_var = action_state["avoid"]["object"]
+            if avoidance_var not in object_state.keys():
+                print(f"Object {avoidance_var} not found in scene in this step.")
+                pass
+            object = object_state[avoidance_var]["obs"]
+            center_x, center_y, center_z = eval(avoidance["center_x, center_y, center_z"])
+            (min_x, min_y, min_z), (max_x, max_y, max_z) = eval(avoidance["(min_x, min_y, min_z), (max_x, max_y, max_z)"])
+            x = eval(avoidance["x"])
+            y = eval(avoidance["y"])
+            z = eval(avoidance["z"])
+            radius_cm = avoidance["radius_cm"]
+            value = avoidance["value"]
+            avoidance_map = set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm, value)
+        return avoidance_map
+    
+    def __get__gripper_map(self,action_state,lmp_env,object_state):
+        gripper_map = lmp_env._get_default_voxel_map('gripper')()
+        gripper = action_state["gripper"]
+        gripper_set = gripper["set"]
+        if gripper_set != "default" :
+            if "object" not in action_state["gripper"].keys():
+                gripper_map[:, :, :] = 1
+                return gripper_map
+            gripper_var = action_state["gripper"]["object"]
+            object = object_state[gripper_var]["obs"]
+            center_x, center_y, center_z = eval(gripper["center_x, center_y, center_z"])
+            (min_x, min_y, min_z), (max_x, max_y, max_z) = eval(gripper["(min_x, min_y, min_z), (max_x, max_y, max_z)"])
+            x = eval(gripper["x"])
+            y = eval(gripper["y"])
+            z = eval(gripper["z"])
+            radius_cm = gripper["radius_cm"]
+            value = gripper["value"]
+            gripper_map = set_voxel_by_radius(gripper_map, [x,y,z], radius_cm, value)
+        return gripper_map
+    
+    
+    def __get__rotation_map(self,action_state,lmp_env,object_state):
+        rotation_map = lmp_env._get_default_voxel_map('rotation')()
+        rotation = action_state["rotation"]
+        rotation_set = rotation["set"]
+        '''if rotation_set != "default" :
                 rotation_var = action_state["rotation"]["object"]
                 if rotation_var not in object_state.keys():
                     print(f"Object {rotation_var} not found in scene in this step.")
@@ -167,28 +173,130 @@ class LMP:
                 object = object_state[rotation_var]["obs"]
                 target_rotation = eval(rotation["target_rotation"])
                 rotation_map[:, :, :] = target_rotation'''
+        return rotation_map
+    
+    def __get__velocity_map(self,action_state,lmp_env,object_state):
+        velocity_map = lmp_env._get_default_voxel_map('velocity')()
+        velocity = action_state["velocity"]
+        velocity_set = velocity["set"]
+        if velocity_set != "default" :
+            target_velocity = velocity["target_velocity"]
+            velocity_map[:] = target_velocity
+        return velocity_map
 
-            if velocity_set != "default" :
-                target_velocity = velocity["target_velocity"]
-                velocity_map[:] = target_velocity
 
-            stop = lmp_env.execute(movable_var,affordable_map,avoidance_map,rotation_map,velocity_map,gripper_map)
-            # 到达目标位置
-            if stop:
-                break
+    def get_update_map(self, action_state, lock, lmp_env):
+        global _map_size, _resolution
+        _map_size = lmp_env._map_size
+        _resolution = lmp_env._resolution
+
+        object_state = self.get_state(self.state_json_path,lock)
+
+        affordable_map = self.__get__affordable_map(action_state,lmp_env,object_state)
+        rotation_map = self.__get__rotation_map(action_state,lmp_env,object_state)
+        velocity_map = self.__get__velocity_map(action_state,lmp_env,object_state)
+        gripper_map = self.__get__gripper_map(action_state,lmp_env,object_state)
+        avoidance_map = self.__get__avoidance_map(action_state,lmp_env,object_state)
+
+        movable = action_state["movable"]
+        movable_var = object_state[movable]["obs"]
+        object_centric = (not movable_var['name'] in EE_ALIAS)
+
+        return movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map, object_centric
+            
+    def __thread_update_traj(self, lmp_env, action_state, lock):
+        #while True:
+        '''
+        real time update map and traj
+        '''
+        movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map, object_centric = self.get_update_map(action_state, lock, lmp_env)
+        if affordable_map is not None:
+            path_voxel, traj_world = lmp_env.update_traj(movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map, self.shared_queue, object_centric)
+            self.shared_queue.put(traj_world)
+            print(traj_world)
+            print(self.shared_queue)
+        else:
+            print("gripper manipulation, not need to update traj")
+            
+
+    def __thread_execute_traj(self,lmp_env,action_state,lock):
+        movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map, object_centric = self.get_update_map(action_state, lock, lmp_env)
+        if affordable_map is not None:
+            traj_world = self.shared_queue.get()
+            for i, waypoint in enumerate(traj_world):
+                # check if the movement is finished
+                if np.linalg.norm(movable_var['_position_world'] - traj_world[-1][0]) <= 0.01:
+                    print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] reached last waypoint; curr_xyz={movable_var['_position_world']}, target={traj_world[-1][0]} (distance: {np.linalg.norm(movable_var['_position_world'] - traj_world[-1][0]):.3f})){bcolors.ENDC}")
+                    break
+                # skip waypoint if moving to this point is going in opposite direction of the final target point
+                # (for example, if you have over-pushed an object, no need to move back)
+                if i != 0 and i != len(traj_world) - 1:
+                    movable2target = traj_world[-1][0] - movable_var['_position_world']
+                    movable2waypoint = waypoint[0] - movable_var['_position_world']
+                    if np.dot(movable2target, movable2waypoint).round(3) <= 0:
+                        print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] skip waypoint {i+1} because it is moving in opposite direction of the final target{bcolors.ENDC}')
+                        continue
+                # execute waypoint
+                controller_info = lmp_env._controller.execute(movable_var, waypoint)
+                dist2target = np.linalg.norm(movable_var['_position_world'] - traj_world[-1][0])
+                if not object_centric and controller_info['mp_info'] == -1:
+                    print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] failed waypoint {i+1} (wp: {waypoint[0].round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {traj_world[-1][0].round(3)}, start: {traj_world[0][0].round(3)}, dist2target: {dist2target.round(3)}); mp info: {controller_info["mp_info"]}{bcolors.ENDC}')
+                else:
+                    print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint {i+1} (wp: {waypoint[0].round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {traj_world[-1][0].round(3)}, start: {traj_world[0][0].round(3)}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')
+            print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] finished executing path via controller{bcolors.ENDC}')
+
+        if not object_centric:
+            try:
+                # traj_world: world_xyz, rotation, velocity, gripper
+                ee_pos_world = traj_world[-1][0]
+                ee_rot_world = traj_world[-1][1]
+                ee_pose_world = np.concatenate([ee_pos_world, ee_rot_world])
+                ee_speed = traj_world[-1][2]
+                gripper_state = traj_world[-1][3]
+            except:
+                # evaluate latest voxel map
+                _rotation_map = rotation_map
+                _velocity_map = velocity_map
+                _gripper_map = gripper_map
+                # get last ee pose
+                ee_pos_world = lmp_env._env.get_ee_pos()
+                ee_pos_voxel = lmp_env.get_ee_pos()
+                ee_rot_world = _rotation_map[ee_pos_voxel[0], ee_pos_voxel[1], ee_pos_voxel[2]]
+                ee_pose_world = np.concatenate([ee_pos_world, ee_rot_world])
+                ee_speed = _velocity_map[ee_pos_voxel[0], ee_pos_voxel[1], ee_pos_voxel[2]]
+                gripper_state = _gripper_map[ee_pos_voxel[0], ee_pos_voxel[1], ee_pos_voxel[2]]
+            # move to the final target
+            print(np.concatenate([ee_pose_world, [gripper_state]]))
+            lmp_env._env.apply_action(np.concatenate([ee_pose_world, [gripper_state]]))
+
 
 
     def __call__(self, query, lock, lmp_env):
         planning = self.generate_planning(query)
         planning_ = planning.copy()
-        action = planning.pop(0)
-        while len(planning) != 0:
+        while len(planning) >= 0:
+            action = planning.pop(0)
             print(f"Action: {action}")
             filepath = self.get_last_filename(self.mask_path)
             action_state  = self._vlmapi_call(filepath,query=query,planner=planning_,action=action,objects=self._context)
             print(action_state)
-            self.__execute_action_state(action_state, lock, lmp_env)
-            action = planning.pop(0)
+
+            # 启动更新路径的线程
+            update_thread = threading.Thread(target=self.__thread_update_traj, args=(lmp_env,action_state,lock,))
+            update_thread.daemon = True  # 设置为守护线程，随主线程退出
+            update_thread.start()
+            update_thread.join()
+
+            # 启动执行路径的线程
+            execute_thread = threading.Thread(target=self.__thread_execute_traj, args=(lmp_env,action_state,lock,))
+            execute_thread.daemon = True  # 设置为守护线程，随主线程退出
+            execute_thread.start()
+            execute_thread.join()
+
+            if len(planning) == 0:
+                print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] finished all planning{bcolors.ENDC}")
+                lmp_env.reset_to_default_pose()
+                break
 
 
 def merge_dicts(dicts):

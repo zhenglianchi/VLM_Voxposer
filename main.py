@@ -9,6 +9,8 @@ import threading
 import time
 import os
 import time
+import queue
+import shutil 
 
 #load config
 config_path = "configs/vlm_rlbench_config.yaml"
@@ -48,25 +50,25 @@ instruction = np.random.choice(descriptions)
 
 # 创建锁
 lock = threading.Lock()
+q = queue.Queue()
 
-def update_state(lock):
-    lmp_env.update_mask_entities(lock)
+def update_state(lock,q):
+    lmp_env.update_mask_entities(lock,q)
+    shutil.rmtree("tmp/images")
+    shutil.rmtree("tmp/masks")
+    os.remove(config["json_path"])
 
-def run_voxposer_ui(instruction,lock,lmp_env):
+def run_voxposer_ui(instruction,lock,lmp_env,q):
     voxposer_ui(instruction,lock,lmp_env)
+    q.put(0)
+    
 
-thread1 = threading.Thread(target=update_state, args=(lock,))
-thread2 = threading.Thread(target=run_voxposer_ui, args=(instruction,lock,lmp_env,))
+thread1 = threading.Thread(target=update_state, args=(lock,q,))
+thread2 = threading.Thread(target=run_voxposer_ui, args=(instruction,lock,lmp_env,q,))
 
 thread1.start()
-time.sleep(10)
-
-json_name = "./tmp/state_front.json"
-while not os.path.exists(json_name):
+while not os.path.exists(config["json_path"]):
     time.sleep(1)
-
 thread2.start()
-
 thread2.join()
-
 thread1.join()

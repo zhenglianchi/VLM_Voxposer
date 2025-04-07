@@ -10,11 +10,8 @@ from VLM_demo import  write_state, get_world_bboxs_list,show_mask,use_sam
 from PIL import Image
 import matplotlib.pyplot as plt
 import matplotlib
+import os
 matplotlib.use('Agg')
-
-# creating some aliases for end effector and table in case LLMs refer to them differently (but rarely this happens)
-EE_ALIAS = ['ee', 'endeffector', 'end_effector', 'end effector', 'gripper', 'hand']
-TABLE_ALIAS = ['table', 'desk', 'workstation', 'work_station', 'work station', 'workspace', 'work_space', 'work space']
 
 class LMP_interface():
 
@@ -116,12 +113,16 @@ class LMP_interface():
     frame = Image.fromarray(np.clip((rgb * 255.).astype(np.uint8), 0, 255)).convert("RGB")
     return frame
 
-  def update_mask_entities(self,lock):
+  def update_mask_entities(self,lock,q):
+      if not os.path.exists("tmp/images"):
+          os.makedirs("tmp/images")
+      if not os.path.exists("tmp/masks"):
+          os.makedirs("tmp/masks")
       state_json_path = f"tmp/state_{self.cam_name}.json"
       state = {}
       plt.figure(figsize=(20, 20))
       num = 0
-      while True:
+      while q.empty():
         start_time = time.time()
         bbox_entities,frame,pcd_ = self.update_box(num)
         plt.clf()
@@ -191,92 +192,66 @@ class LMP_interface():
   def get_ee_pos(self):
     return self._world_to_voxel(self._env.get_ee_pos())
   
-  def execute(self, movable_obs, affordance_map=None, avoidance_map=None, rotation_map=None,
-              velocity_map=None, gripper_map=None):
-    """
-    First use planner to generate waypoint path, then use controller to follow the waypoints.
-
-    Args:
-      movable_obs: a dictionary of movable objects
-      affordance_map: callable function that generates a 3D numpy array, the target voxel map
-      avoidance_map: callable function that generates a 3D numpy array, the obstacle voxel map
-      rotation_map: callable function that generates a 4D numpy array, the rotation voxel map (rotation is represented by a quaternion *in world frame*)
-      velocity_map: callable function that generates a 3D numpy array, the velocity voxel map
-      gripper_map: callable function that generates a 3D numpy array, the gripper voxel map
-    """
-
-    # 如果需要移动的是末端执行器则 object_centric=False，否则为True
-    object_centric = (not movable_obs['name'] in EE_ALIAS)
-    stop = True
+  def update_traj(self, movable_obs, affordance_map=None, avoidance_map=None, rotation_map=None,
+                  velocity_map=None, gripper_map=None, shared_queue = None,  object_centric = None):
+    path_voxel = None
+    traj_world = None
     if affordance_map is not None:
-      # evaluate voxel maps such that we use latest information
-      _affordance_map = affordance_map
-      _avoidance_map = avoidance_map
-      _rotation_map = rotation_map
-      _velocity_map = velocity_map
-      _gripper_map = gripper_map
-      # preprocess avoidance map
-      _avoidance_map = self._preprocess_avoidance_map(_avoidance_map, _affordance_map, movable_obs)
-      # start planning
-      start_pos = movable_obs['position']
-      if movable_obs['name'] == "gripper":
-        start_pos = self.get_ee_pos()
-
-      if distance_transform_edt(1 - _affordance_map)[tuple(start_pos)] <= 1.5:
-        print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] reached target; terminating {bcolors.ENDC}')
-        return stop
-
-      next_pos, stop = self._planner.optimize(start_pos, _affordance_map, _avoidance_map, object_centric=object_centric)
-
-      world_xyz = self._voxel_to_world(next_pos)
-      voxel_xyz = np.round(next_pos).astype(int)
-      # get the current rotation (in world frame)
-      voxel_rotation = rotation_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]]
-      # get the current velocity
-      voxel_velocity = velocity_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]]
-      # get the current on/off
-      voxel_gripper = gripper_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]]
-
-      waypoint = (world_xyz, voxel_rotation, voxel_velocity, voxel_gripper)
-      # waypoint : world_xyz, rotation, velocity, gripper
-      controller_info = self._controller.execute(movable_obs, waypoint)
-
-      dist2target = np.linalg.norm(movable_obs['_position_world'] - world_xyz)
-
-      if not object_centric and controller_info['mp_info'] == -1:
-        print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] failed waypoint (wp: {world_xyz.round(3)}, actual: {movable_obs["_position_world"].round(3)}, target: {next_pos.round(3)}, start: {start_pos.round(3)}, dist2target: {dist2target.round(3)}); mp info: {controller_info["mp_info"]}{bcolors.ENDC}')
-      else:
-        print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint (wp: {world_xyz.round(3)}, actual: {movable_obs["_position_world"].round(3)}, target: {next_pos.round(3)}, start: {start_pos.round(3)}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')
+      # execute path in closed-loop
+      for plan_iter in range(self._cfg['max_plan_iter']):
+        # preprocess avoidance map
+        _avoidance_map = self._preprocess_avoidance_map(avoidance_map, affordance_map, movable_obs)
+        # start planning
+        start_pos = movable_obs['position']
+        # optimize path and log
+        path_voxel, planner_info = self._planner.optimize(start_pos, affordance_map, _avoidance_map,
+                                                        object_centric=object_centric)
       
-      controller_info['target_waypoint'] = waypoint
+        assert len(path_voxel) > 0, 'path_voxel is empty'
+        # convert voxel path to world trajectory, and include rotation, velocity, and gripper information
+        traj_world = self._path2traj(path_voxel, rotation_map, velocity_map, gripper_map)
+        traj_world = traj_world[:self._cfg['num_waypoints_per_plan']]
+      return path_voxel, traj_world
 
 
-    # make sure we are at the final target position and satisfy any additional parametrization
-    # (skip if we are specifying object-centric motion)
-    if not object_centric:
-      try:
-        # traj_world: world_xyz, rotation, velocity, gripper
-        ee_pos_world = world_xyz
-        ee_rot_world = voxel_rotation
-        ee_pose_world = np.concatenate([ee_pos_world, ee_rot_world])
-        ee_speed = voxel_velocity
-        gripper_state = voxel_gripper
-      except:
-        # evaluate latest voxel map
-        _rotation_map = rotation_map
-        _velocity_map = velocity_map
-        _gripper_map = gripper_map
-        # get last ee pose
-        ee_pos_world = self._env.get_ee_pos()
-        ee_pos_voxel = self.get_ee_pos()
-        ee_rot_world = _rotation_map[ee_pos_voxel[0], ee_pos_voxel[1], ee_pos_voxel[2]]
-        ee_pose_world = np.concatenate([ee_pos_world, ee_rot_world])
-        ee_speed = _velocity_map[ee_pos_voxel[0], ee_pos_voxel[1], ee_pos_voxel[2]]
-        gripper_state = _gripper_map[ee_pos_voxel[0], ee_pos_voxel[1], ee_pos_voxel[2]]
-      # move to the final target
-      self._env.apply_action(np.concatenate([ee_pose_world, [gripper_state]]))
+  def _path2traj(self, path, rotation_map, velocity_map, gripper_map):
+    """
+    convert path (generated by planner) to trajectory (used by controller)
+    path only contains a sequence of voxel coordinates, while trajectory parametrize the motion of the end-effector with rotation, velocity, and gripper on/off command
+    """
+    # convert path to trajectory
+    traj = []
+    for i in range(len(path)):
+      # get the current voxel position
+      voxel_xyz = path[i]
+      # get the current world position
+      world_xyz = self._voxel_to_world(voxel_xyz)
+      voxel_xyz = np.round(voxel_xyz).astype(int)
+      # get the current rotation (in world frame)
+      rotation = rotation_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]]
+      # get the current velocity
+      velocity = velocity_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]]
+      # get the current on/off
+      gripper = gripper_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]]
+      # LLM might specify a gripper value change, but sometimes EE may not be able to reach the exact voxel, so we overwrite the gripper value if it's close enough (TODO: better way to do this?)
+      if (i == len(path) - 1) and not (np.all(gripper_map == 1) or np.all(gripper_map == 0)):
+        # get indices of the less common values
+        less_common_value = 1 if np.sum(gripper_map == 1) < np.sum(gripper_map == 0) else 0
+        less_common_indices = np.where(gripper_map == less_common_value)
+        less_common_indices = np.array(less_common_indices).T
+        # get closest distance from voxel_xyz to any of the indices that have less common value
+        closest_distance = np.min(np.linalg.norm(less_common_indices - voxel_xyz[None, :], axis=0))
+        # if the closest distance is less than threshold, then set gripper to less common value
+        if closest_distance <= 3:
+          gripper = less_common_value
+          print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] overwriting gripper to less common value for the last waypoint{bcolors.ENDC}')
+      # add to trajectory
+      traj.append((world_xyz, rotation, velocity, gripper))
+    # append the last waypoint a few more times for the robot to stabilize
+    for _ in range(2):
+      traj.append((world_xyz, rotation, velocity, gripper))
+    return traj
 
-    return stop
   
   def reset_to_default_pose(self):
      self._env.reset_to_default_pose()
