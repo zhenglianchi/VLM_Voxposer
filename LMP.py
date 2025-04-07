@@ -205,16 +205,51 @@ class LMP:
         return movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map, object_centric
             
     def __thread_update_traj(self, lmp_env, action_state, lock):
-        #while True:
         '''
         real time update map and traj
         '''
-        movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map, object_centric = self.get_update_map(action_state, lock, lmp_env)
-        if affordable_map is not None:
-            path_voxel, traj_world = lmp_env.update_traj(movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map, self.shared_queue, object_centric)
-            self.shared_queue.put(traj_world)
-            print(traj_world)
-            print(self.shared_queue)
+        movable_var, affordance_map, avoidance_map, rotation_map, velocity_map, gripper_map, object_centric = self.get_update_map(action_state, lock, lmp_env)
+        if affordance_map is not None:
+            # preprocess avoidance map
+            _avoidance_map = lmp_env._preprocess_avoidance_map(avoidance_map, affordance_map, movable_var)
+            # start planning
+            start_pos = movable_var['position']
+            # optimize path and log
+            path_voxel, planner_info = lmp_env._planner.optimize(start_pos, affordance_map, _avoidance_map,
+                                                            object_centric=object_centric)
+            
+            assert len(path_voxel) > 0, 'path_voxel is empty'
+            # convert voxel path to world trajectory, and include rotation, velocity, and gripper information
+            # convert path to trajectory
+            for i in range(len(path_voxel)):
+                # get the current voxel position
+                voxel_xyz = path_voxel[i]
+                # get the current world position
+                world_xyz = lmp_env._voxel_to_world(voxel_xyz)
+                voxel_xyz = np.round(voxel_xyz).astype(int)
+                # get the current rotation (in world frame)
+                rotation = rotation_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]]
+                # get the current velocity
+                velocity = velocity_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]]
+                # get the current on/off
+                gripper = gripper_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]]
+                # LLM might specify a gripper value change, but sometimes EE may not be able to reach the exact voxel, so we overwrite the gripper value if it's close enough (TODO: better way to do this?)
+                if (i == len(path_voxel) - 1) and not (np.all(gripper_map == 1) or np.all(gripper_map == 0)):
+                    # get indices of the less common values
+                    less_common_value = 1 if np.sum(gripper_map == 1) < np.sum(gripper_map == 0) else 0
+                    less_common_indices = np.where(gripper_map == less_common_value)
+                    less_common_indices = np.array(less_common_indices).T
+                    # get closest distance from voxel_xyz to any of the indices that have less common value
+                    closest_distance = np.min(np.linalg.norm(less_common_indices - voxel_xyz[None, :], axis=0))
+                    # if the closest distance is less than threshold, then set gripper to less common value
+                    if closest_distance <= 3:
+                        gripper = less_common_value
+                        print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] overwriting gripper to less common value for the last waypoint{bcolors.ENDC}')
+                    # add to trajectory
+                self.shared_queue.put((world_xyz, rotation, velocity, gripper))
+                # append the last waypoint a few more times for the robot to stabilize
+            for _ in range(2):
+                self.shared_queue.put((world_xyz, rotation, velocity, gripper))
         else:
             print("gripper manipulation, not need to update traj")
             
@@ -222,37 +257,40 @@ class LMP:
     def __thread_execute_traj(self,lmp_env,action_state,lock):
         movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map, object_centric = self.get_update_map(action_state, lock, lmp_env)
         if affordable_map is not None:
-            traj_world = self.shared_queue.get()
-            for i, waypoint in enumerate(traj_world):
+            i = 0
+            while not self.shared_queue.empty():
+                queue_list = list(self.shared_queue.queue)
+                waypoint = self.shared_queue.get()
                 # check if the movement is finished
-                if np.linalg.norm(movable_var['_position_world'] - traj_world[-1][0]) <= 0.01:
-                    print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] reached last waypoint; curr_xyz={movable_var['_position_world']}, target={traj_world[-1][0]} (distance: {np.linalg.norm(movable_var['_position_world'] - traj_world[-1][0]):.3f})){bcolors.ENDC}")
+                if np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0]) <= 0.01:
+                    print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] reached last waypoint; curr_xyz={movable_var['_position_world']}, target={queue_list[-1][0]} (distance: {np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0]):.3f})){bcolors.ENDC}")
                     break
                 # skip waypoint if moving to this point is going in opposite direction of the final target point
                 # (for example, if you have over-pushed an object, no need to move back)
-                if i != 0 and i != len(traj_world) - 1:
-                    movable2target = traj_world[-1][0] - movable_var['_position_world']
+                if i != 0 and i != len(queue_list) - 1:
+                    movable2target = queue_list[-1][0] - movable_var['_position_world']
                     movable2waypoint = waypoint[0] - movable_var['_position_world']
                     if np.dot(movable2target, movable2waypoint).round(3) <= 0:
                         print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] skip waypoint {i+1} because it is moving in opposite direction of the final target{bcolors.ENDC}')
                         continue
                 # execute waypoint
                 controller_info = lmp_env._controller.execute(movable_var, waypoint)
-                dist2target = np.linalg.norm(movable_var['_position_world'] - traj_world[-1][0])
+                dist2target = np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0])
                 if not object_centric and controller_info['mp_info'] == -1:
-                    print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] failed waypoint {i+1} (wp: {waypoint[0].round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {traj_world[-1][0].round(3)}, start: {traj_world[0][0].round(3)}, dist2target: {dist2target.round(3)}); mp info: {controller_info["mp_info"]}{bcolors.ENDC}')
+                    print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] failed waypoint {i+1} (wp: {waypoint[0].round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {queue_list[-1][0].round(3)}, start: {queue_list[0][0].round(3)}, dist2target: {dist2target.round(3)}); mp info: {controller_info["mp_info"]}{bcolors.ENDC}')
                 else:
-                    print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint {i+1} (wp: {waypoint[0].round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {traj_world[-1][0].round(3)}, start: {traj_world[0][0].round(3)}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')
+                    print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint {i+1} (wp: {waypoint[0].round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {queue_list[-1][0].round(3)}, start: {queue_list[0][0].round(3)}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')
+                i += 1
             print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] finished executing path via controller{bcolors.ENDC}')
 
         if not object_centric:
             try:
                 # traj_world: world_xyz, rotation, velocity, gripper
-                ee_pos_world = traj_world[-1][0]
-                ee_rot_world = traj_world[-1][1]
+                ee_pos_world = queue_list[-1][0]
+                ee_rot_world = queue_list[-1][1]
                 ee_pose_world = np.concatenate([ee_pos_world, ee_rot_world])
-                ee_speed = traj_world[-1][2]
-                gripper_state = traj_world[-1][3]
+                ee_speed = queue_list[-1][2]
+                gripper_state = queue_list[-1][3]
             except:
                 # evaluate latest voxel map
                 _rotation_map = rotation_map
@@ -266,7 +304,6 @@ class LMP:
                 ee_speed = _velocity_map[ee_pos_voxel[0], ee_pos_voxel[1], ee_pos_voxel[2]]
                 gripper_state = _gripper_map[ee_pos_voxel[0], ee_pos_voxel[1], ee_pos_voxel[2]]
             # move to the final target
-            print(np.concatenate([ee_pose_world, [gripper_state]]))
             lmp_env._env.apply_action(np.concatenate([ee_pose_world, [gripper_state]]))
 
 
