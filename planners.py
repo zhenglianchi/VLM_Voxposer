@@ -27,7 +27,6 @@ class PathPlanner:
             path: (n, 3) np.ndarray, path
             info: dict, info
         """
-        print(f'[planners.py | {get_clock_time(milliseconds=True)}] start')
         info = dict()
         # make copies
         start_pos, raw_start_pos = start_pos.copy(), start_pos

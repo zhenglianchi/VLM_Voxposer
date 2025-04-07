@@ -49,22 +49,22 @@ set_lmp_objects(lmps, env.get_object_names())
 instruction = np.random.choice(descriptions)
 
 # 创建锁
-lock = threading.Lock()
+file_lock = threading.Lock()
 q = queue.Queue()
 
-def update_state(lock,q):
-    lmp_env.update_mask_entities(lock,q)
+def update_state(file_lock,q):
+    lmp_env.update_mask_entities(file_lock,q)
     shutil.rmtree("tmp/images")
     shutil.rmtree("tmp/masks")
     os.remove(config["json_path"])
 
-def run_voxposer_ui(instruction,lock,lmp_env,q):
-    voxposer_ui(instruction,lock,lmp_env)
+def run_voxposer_ui(instruction,file_lock,lmp_env,q):
+    voxposer_ui(instruction,file_lock,lmp_env)
     q.put(0)
     
 
-thread1 = threading.Thread(target=update_state, args=(lock,q,))
-thread2 = threading.Thread(target=run_voxposer_ui, args=(instruction,lock,lmp_env,q,))
+thread1 = threading.Thread(target=update_state, args=(file_lock,q,))
+thread2 = threading.Thread(target=run_voxposer_ui, args=(instruction,file_lock,lmp_env,q,))
 
 thread1.start()
 while not os.path.exists(config["json_path"]):
