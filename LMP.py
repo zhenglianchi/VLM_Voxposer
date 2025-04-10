@@ -279,10 +279,10 @@ class LMP:
                     time.sleep(0.2)
                     continue
                 queue_list = list(self.shared_queue.queue)
-                if len(queue_list) < 4:
+                if len(queue_list) < 2:
                     update_stop_event.set()
                 
-                if len(queue_list) >= 4:
+                if len(queue_list) >= 2:
                     curr_xyz = movable_var['_position_world']
                     self.get_next_valid_waypoint(curr_xyz)
 

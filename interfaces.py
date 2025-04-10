@@ -10,8 +10,11 @@ from VLM_demo import  write_state, get_world_bboxs_list,show_mask,process_visual
 from PIL import Image
 import matplotlib.pyplot as plt
 import matplotlib
+import json_numpy
 import os
 matplotlib.use('Agg')
+
+json_numpy.patch()
 
 class LMP_interface():
 
@@ -172,6 +175,7 @@ class LMP_interface():
         state['gripper'] = self.get_ee_obs()
         state['workspace'] = self.get_table_obs()
         # 将state保存为JSON文件
+        #print(state)
         write_state(state_json_path, state, lock)
         end_time = time.time()  # 记录结束时间
         elapsed_time_ms = (end_time - start_time) * 1000  # 计算并转换为毫秒
