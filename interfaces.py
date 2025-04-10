@@ -6,7 +6,7 @@ import time
 from scipy.ndimage import distance_transform_edt
 from controllers import Controller
 import open3d as o3d
-from VLM_demo import  write_state, get_world_bboxs_list,show_mask,use_sam
+from VLM_demo import  write_state, get_world_bboxs_list,show_mask,process_visual_prompt,set_visual_prompt,predict_mask,encode_image,resize_bbox_to_original,smart_resize,get_response
 from PIL import Image
 import matplotlib.pyplot as plt
 import matplotlib
@@ -38,7 +38,7 @@ class LMP_interface():
         sensor.handle_explicitly()
         if get_rgb:
             rgb = sensor.capture_rgb()
-            rgb = np.clip((rgb * 255.).astype(np.uint8), 0, 255)
+            rgb = Image.fromarray(np.clip((rgb * 255.).astype(np.uint8), 0, 255)).convert("RGB")
         if get_depth or get_pcd:
             depth = sensor.capture_depth(False)
         if get_pcd:
@@ -97,21 +97,16 @@ class LMP_interface():
       object_obs = {"obs":Observation(obs_dict)}
       return object_obs
   
-
-  def update_box(self,num):
-      rgb, _, pcd = self.get_rgb_depth(self.cam, get_rgb=True, get_depth=True, get_pcd=True)
-      image = Image.fromarray(np.array(rgb))
-      image_path = f"tmp/images/rgb_{num}.jpeg"
-      image.save(image_path)
-      objects = self._env.get_object_names()
-      bbox = get_world_bboxs_list(image_path, objects)
-      return bbox,rgb,pcd
   
-  def _capture_rgb(self):
-    self.cam.handle_explicitly()
-    rgb = self.cam.capture_rgb()
-    frame = Image.fromarray(np.clip((rgb * 255.).astype(np.uint8), 0, 255)).convert("RGB")
-    return frame
+  def update_box(self,num):
+    rgb, _, _ = self.get_rgb_depth(self.cam, get_rgb=True, get_depth=False, get_pcd=False)
+    image = Image.fromarray(np.array(rgb))
+    image_path = f"tmp/images/rgb_{num}.jpeg"
+    image.save(image_path)
+    objects = self._env.get_object_names()
+    bbox = get_world_bboxs_list(image_path, objects)
+    return rgb, bbox
+
 
   def update_mask_entities(self,lock,q):
       if not os.path.exists("tmp/images"):
@@ -122,14 +117,19 @@ class LMP_interface():
       state = {}
       plt.figure(figsize=(20, 20))
       num = 0
+      frame, bbox_entities = self.update_box(num)
+      visuals,classes = process_visual_prompt(bbox_entities)
+      set_visual_prompt(frame, visuals, classes)
+
       while q.empty():
         start_time = time.time()
-        bbox_entities,frame,pcd_ = self.update_box(num)
+        frame, _, pcd_ = self.get_rgb_depth(self.cam, get_rgb=True, get_depth=True, get_pcd=True)
         plt.clf()
         plt.imshow(frame)
         try:
-          bbox = [item["bbox"] for item in bbox_entities]
-          masks_ = use_sam(frame, bbox)
+          boxes, masks = predict_mask(frame)
+          print(boxes)
+          print(masks)
           for (index,item) in enumerate(bbox_entities):
               points, masks, normals = [], [], []
               points.append(pcd_.reshape(-1, 3))

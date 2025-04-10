@@ -32,7 +32,7 @@ class LMP:
         self.image_path = "./tmp/images/"
         self.state_json_path = "./tmp/state_front.json"
         #set your api_key Qwen
-        self.api_key= "sk-6c92e8dc39534beea619a0470d8a2571"
+        self.api_key= "sk-2b726a0c6b6a4554b7834df6bac0b803"
         self.base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
 
         self.shared_queue = queue.Queue()
@@ -205,18 +205,15 @@ class LMP:
 
         return movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map, object_centric
             
-    def __thread_update_traj(self, lmp_env, action_state, file_lock, stop_event):
-        '''
-        real time update map and traj
-        '''
-        while not stop_event.is_set():
+    def __thread_update_traj(self, lmp_env, action_state, file_lock, update_stop_event, exec_stop_event):
+        while not update_stop_event.is_set():
             movable_var, affordance_map, avoidance_map, rotation_map, velocity_map, gripper_map, object_centric = self.get_update_map(action_state, file_lock, lmp_env)
             if affordance_map is not None:
                 # Preprocess avoidance map
                 _avoidance_map = lmp_env._preprocess_avoidance_map(avoidance_map, affordance_map, movable_var)
 
                 start_pos = lmp_env.get_ee_pos().copy()  # 直接获取实时位置
-
+                
                 # Optimize path and log
                 path_voxel, planner_info = lmp_env._planner.optimize(start_pos, affordance_map, _avoidance_map,
                                                                     object_centric=object_centric)
@@ -239,7 +236,6 @@ class LMP:
                         closest_distance = np.min(np.linalg.norm(less_common_indices - voxel_xyz[None, :], axis=0))
                         if closest_distance <= 3:
                             gripper = less_common_value
-                            print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] overwriting gripper to less common value for the last waypoint{bcolors.ENDC}')
                     
                     trajectory.append((world_xyz, rotation, velocity, gripper))
 
@@ -257,22 +253,44 @@ class LMP:
                     self.shared_queue.put(wp)
             else:
                 print("Gripper manipulation, no need to update traj")
+                break
+
+    def get_next_valid_waypoint(self, curr_xyz):
+        queue_list = list(self.shared_queue.queue)
+        min_dist = float('inf')
+        closest_idx = -1
+        for idx, wp in enumerate(queue_list):
+            dist = np.linalg.norm(curr_xyz - wp[0])
+            if dist < min_dist:
+                min_dist = dist
+                closest_idx = idx
+        
+        for i in range(closest_idx):
+            self.shared_queue.get()
 
 
-    def __thread_execute_traj(self, lmp_env, action_state, file_lock, stop_event):
+    def __thread_execute_traj(self, lmp_env, action_state, file_lock, update_stop_event, exec_stop_event):
         movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map, object_centric = self.get_update_map(action_state, file_lock, lmp_env)
         if affordable_map is not None:
             i = 0
-            while not stop_event.is_set():
+            while not exec_stop_event.is_set():
+                movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map, object_centric = self.get_update_map(action_state, file_lock, lmp_env)
                 if self.shared_queue.empty():
                     time.sleep(0.2)
                     continue
                 queue_list = list(self.shared_queue.queue)
+                if len(queue_list) < 4:
+                    update_stop_event.set()
+                
+                if len(queue_list) >= 4:
+                    curr_xyz = movable_var['_position_world']
+                    self.get_next_valid_waypoint(curr_xyz)
+
                 waypoint = self.shared_queue.get()
                 # check if the movement is finished
                 if np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0]) <= 0.01:
                     print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] reached last waypoint; curr_xyz={movable_var['_position_world']}, target={queue_list[-1][0]} (distance: {np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0]):.3f})){bcolors.ENDC}")
-                    stop_event.set()
+                    exec_stop_event.set()
                     break
                 # skip waypoint if moving to this point is going in opposite direction of the final target point
                 # (for example, if you have over-pushed an object, no need to move back)
@@ -327,20 +345,28 @@ class LMP:
             action_state  = self._vlmapi_call(filepath, query=query, planner=planning_, action=action, objects=self._context)
             print(action_state)
 
-            stop_event = threading.Event()
+            update_stop_event = threading.Event()
+            exec_stop_event = threading.Event()
 
             # 启动更新路径的线程
-            update_thread = threading.Thread(target=self.__thread_update_traj, args=(lmp_env, action_state, file_lock, stop_event, ))
+            update_thread = threading.Thread(target=self.__thread_update_traj, args=(lmp_env, action_state, file_lock, update_stop_event,exec_stop_event, ))
             update_thread.daemon = True  # 设置为守护线程，随主线程退出
             update_thread.start()
 
             # 启动执行路径的线程
-            execute_thread = threading.Thread(target=self.__thread_execute_traj, args=(lmp_env, action_state, file_lock, stop_event, ))
+            execute_thread = threading.Thread(target=self.__thread_execute_traj, args=(lmp_env, action_state, file_lock, update_stop_event,exec_stop_event, ))
             execute_thread.daemon = True  # 设置为守护线程，随主线程退出
             execute_thread.start()
 
             execute_thread.join()
             update_thread.join()
+
+            # Clear old queue and insert new trajectory
+            while not self.shared_queue.empty():
+                try:
+                    self.shared_queue.get_nowait()
+                except Exception:
+                    break
 
             if len(planning) == 0:
                 print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] finished all planning{bcolors.ENDC}")

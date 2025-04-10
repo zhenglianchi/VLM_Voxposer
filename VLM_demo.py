@@ -10,32 +10,49 @@ import matplotlib.pyplot as plt
 import time
 import torch
 import sys
-sys.path.append("EdgeSAM/")
-from EdgeSAM.edge_sam import sam_model_registry, SamPredictor
+import re
+from ultralytics import YOLOE
+from ultralytics.models.yolo.yoloe.predict_vp import YOLOEVPSegPredictor
 
-json_numpy.patch()
-sam_checkpoint = "EdgeSAM/weights/edge_sam.pth"
-model_type = "edge_sam"
+model = YOLOE("yoloe-11s-seg.pt")
 
-device = "cuda:0"
+def process_visual_prompt(bbox_entities):
+    bbox = np.array([item["bbox"] for item in bbox_entities])
+    labels = [item["label"] for item in bbox_entities]
+    cls_label = []
+    cls = []
+    classes = []
+    label2id = {}
+    index = 0
+    for label in labels:
+        # 去除末尾的数字并转换为统一类别
+        key = re.sub(r'\d+$', '', label)
+        cls_label.append(key)
+        if key not in label2id:
+            label2id[key] = index
+            index += 1
 
-sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
-sam.to(device=device)
+    cls = np.array([label2id[label] for label in cls_label])
+    classes = list(label2id.keys())
 
-predictor = SamPredictor(sam)
-
-def use_sam(frame,bbox):
-    frame = np.array(frame)
-    predictor.set_image(frame)
-    input_boxes = torch.tensor(bbox, device=predictor.device)
-    transformed_boxes = predictor.transform.apply_boxes_torch(input_boxes, frame.shape[:2])
-    masks, _, _ = predictor.predict_torch(
-        point_coords=None,
-        point_labels=None,
-        boxes=transformed_boxes,
-        num_multimask_outputs=1,
+    visuals = dict(
+        bboxes=[bbox]
+        ,
+        cls=[cls]
     )
-    return masks.cpu().numpy()
+    return visuals,classes
+
+def set_visual_prompt(source_image,prompts,classes):
+    model.predict(source_image, prompts=prompts, predictor=YOLOEVPSegPredictor,return_vpe=True, save=False)
+    model.set_classes(classes, model.predictor.vpe)
+    model.predictor = None  # remove VPPredictor
+
+def predict_mask(target_image):
+    result = model.predict(target_image, save=True, conf=0.5, iou=0.5)
+    masks = result[0].masks.data
+    boxes = result[0].boxes.data
+    return boxes.detach().cpu().numpy(), masks.detach().cpu().numpy()
+
 
 def write_state(output_json_path,state,lock):
     while True:
@@ -126,7 +143,7 @@ def smart_resize(image_path, factor = 28, vl_high_resolution_images = False):
 def get_world_bboxs_list(image_path,objects):
 
     client = OpenAI(
-        api_key="sk-6c92e8dc39534beea619a0470d8a2571",
+        api_key="sk-2b726a0c6b6a4554b7834df6bac0b803",
         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
     )
 
