@@ -40,15 +40,15 @@ def process_visual_prompt(bbox_entities):
         ,
         cls=[cls]
     )
-    return visuals,classes
+    return visuals,classes,label2id,cls_label
 
 def set_visual_prompt(source_image,prompts,classes):
-    model.predict(source_image, prompts=prompts, predictor=YOLOEVPSegPredictor,return_vpe=True, save=False)
+    model.predict(source_image, prompts=prompts, predictor=YOLOEVPSegPredictor,return_vpe=True, save=False, verbose=False, imgsz=(480,640))
     model.set_classes(classes, model.predictor.vpe)
     model.predictor = None  # remove VPPredictor
 
 def predict_mask(target_image):
-    result = model.predict(target_image, save=True, conf=0.5, iou=0.5)
+    result = model.predict(target_image, save=False, conf=0.5, iou=0.5, verbose=False, imgsz=(480,640))
     masks = result[0].masks.data
     boxes = result[0].boxes.data
     return boxes.detach().cpu().numpy(), masks.detach().cpu().numpy()

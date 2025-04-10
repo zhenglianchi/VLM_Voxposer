@@ -98,10 +98,10 @@ class LMP_interface():
       return object_obs
   
   
-  def update_box(self,num):
+  def update_box(self):
     rgb, _, _ = self.get_rgb_depth(self.cam, get_rgb=True, get_depth=False, get_pcd=False)
     image = Image.fromarray(np.array(rgb))
-    image_path = f"tmp/images/rgb_{num}.jpeg"
+    image_path = f"tmp/images/rgb.jpeg"
     image.save(image_path)
     objects = self._env.get_object_names()
     bbox = get_world_bboxs_list(image_path, objects)
@@ -116,77 +116,71 @@ class LMP_interface():
       state_json_path = f"tmp/state_{self.cam_name}.json"
       state = {}
       plt.figure(figsize=(20, 20))
-      num = 0
-      frame, bbox_entities = self.update_box(num)
-      visuals,classes = process_visual_prompt(bbox_entities)
+      frame, bbox_entities = self.update_box()
+      visuals,classes,label2id,id2label = process_visual_prompt(bbox_entities)
       set_visual_prompt(frame, visuals, classes)
-
+      num = 0
       while q.empty():
         start_time = time.time()
         frame, _, pcd_ = self.get_rgb_depth(self.cam, get_rgb=True, get_depth=True, get_pcd=True)
         plt.clf()
         plt.imshow(frame)
-        try:
-          boxes, masks = predict_mask(frame)
-          print(boxes)
-          print(masks)
-          for (index,item) in enumerate(bbox_entities):
-              points, masks, normals = [], [], []
-              points.append(pcd_.reshape(-1, 3))
-              mask = masks_[index]
-              label = item['label']
-              h, w = mask.shape[-2:]
-              mask = (mask>0.0).astype(np.uint8)
-              show_mask(mask,plt.gca())
-              mask =  mask.reshape(h, w).reshape(-1)
-              masks.append(mask)
-              # estimate normals using o3d
-              pcd = o3d.geometry.PointCloud()
-              pcd.points = o3d.utility.Vector3dVector(points[-1])
-              pcd.estimate_normals()
-              cam_normals = np.asarray(pcd.normals)
-              # use lookat vector to adjust normal vectors
-              flip_indices = np.dot(cam_normals, self._env.lookat_vectors[self.cam_name]) > 0
-              cam_normals[flip_indices] *= -1
-              normals.append(cam_normals)
-              points,masks,normals = np.array(points),np.array(masks),np.array(normals)
-              obj_points = points[np.isin(masks, 1)]
-              if len(obj_points) == 0:
-                  print(f"Scene not object {label}!")
-                  continue
-              obj_normals = normals[np.isin(masks, 1)]
-              # voxel downsample using o3d
-              pcd = o3d.geometry.PointCloud()
-              pcd.points = o3d.utility.Vector3dVector(obj_points)
-              pcd.normals = o3d.utility.Vector3dVector(obj_normals)
-              pcd_downsampled = pcd.voxel_down_sample(voxel_size=0.001)
-              obj_points = np.asarray(pcd_downsampled.points)
-              obj_normals = np.asarray(pcd_downsampled.normals)
+        boxes, masks = predict_mask(frame)
+        for (box_ent, mask) in zip(boxes, masks):
+            points, masks, normals = [], [], []
+            box = box_ent[:4]
+            conf = box_ent[4]
+            id = int(box_ent[5])
+            label = id2label[id]
+            points.append(pcd_.reshape(-1, 3))
+            h, w = mask.shape[-2:]
+            show_mask(mask,plt.gca())
+            mask =  mask.reshape(h, w).reshape(-1)
+            masks.append(mask)
+            # estimate normals using o3d
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(points[-1])
+            pcd.estimate_normals()
+            cam_normals = np.asarray(pcd.normals)
+            # use lookat vector to adjust normal vectors
+            flip_indices = np.dot(cam_normals, self._env.lookat_vectors[self.cam_name]) > 0
+            cam_normals[flip_indices] *= -1
+            normals.append(cam_normals)
+            points,masks,normals = np.array(points),np.array(masks),np.array(normals)
+            obj_points = points[np.isin(masks, 1)]
+            if len(obj_points) == 0:
+                print(f"Scene not object {label}!")
+                continue
+            obj_normals = normals[np.isin(masks, 1)]
+            # voxel downsample using o3d
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(obj_points)
+            pcd.normals = o3d.utility.Vector3dVector(obj_normals)
+            pcd_downsampled = pcd.voxel_down_sample(voxel_size=0.001)
+            obj_points = np.asarray(pcd_downsampled.points)
+            obj_normals = np.asarray(pcd_downsampled.normals)
 
-              state[label]= self.get_obs(obj_points, obj_normals, label)
-              # 获取bbox的中心坐标
-              x_min, y_min, x_max, y_max = bbox[index]
-              center_x = (x_min + x_max) / 2
-              center_y = (y_min + y_max) / 2
+            state[label]= self.get_obs(obj_points, obj_normals, label)
+            # 获取bbox的中心坐标
+            x_min, y_min, x_max, y_max = box
+            center_x = (x_min + x_max) / 2
+            center_y = (y_min + y_max) / 2
 
-              # 在中心位置显示label
-              plt.text(center_x, center_y, label, color='white', ha='center', va='center', fontsize=12, weight='bold')
+            # 在中心位置显示label
+            plt.text(center_x, center_y, label, color='white', ha='center', va='center', fontsize=12, weight='bold')
 
-          state['gripper'] = self.get_ee_obs()
-          state['workspace'] = self.get_table_obs()
-          # 将state保存为JSON文件
-          write_state(state_json_path, state,lock)
-          end_time = time.time()  # 记录结束时间
-          elapsed_time_ms = (end_time - start_time) * 1000  # 计算并转换为毫秒
-          print("update state success!"+f"Consumed time: {elapsed_time_ms:.2f} ms")
-          plt.axis('off')
-          plt.draw()
-          plt.savefig(f"tmp/masks/mask_{num}.jpeg", bbox_inches='tight', pad_inches=0)
-          num+=1
-          #plt.pause(0.01)
-
-        except Exception as e:
-          print(f"ERROR: Failed to get state, try again - {e}")
+        state['gripper'] = self.get_ee_obs()
+        state['workspace'] = self.get_table_obs()
+        # 将state保存为JSON文件
+        write_state(state_json_path, state, lock)
+        end_time = time.time()  # 记录结束时间
+        elapsed_time_ms = (end_time - start_time) * 1000  # 计算并转换为毫秒
+        print("update state success!"+f"Consumed time: {elapsed_time_ms:.2f} ms")
+        plt.axis('off')
+        plt.draw()
+        plt.savefig(f"tmp/masks/mask_{num}.jpeg", bbox_inches='tight', pad_inches=0)
+        num+=1
+        #plt.pause(0.01)
   
 
   def get_ee_pos(self):

@@ -69,6 +69,6 @@ thread2 = threading.Thread(target=run_voxposer_ui, args=(instruction,file_lock,l
 thread1.start()
 while not os.path.exists(config["json_path"]):
     time.sleep(1)
-thread2.start()
-thread2.join()
+#thread2.start()
+#thread2.join()
 thread1.join()
