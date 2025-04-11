@@ -123,6 +123,11 @@ class LMP_interface():
       visuals,classes,label2id,id2label = process_visual_prompt(bbox_entities)
       set_visual_prompt(frame, visuals, classes)
       num = 0
+      label_index = {}
+      for item in classes:
+        if item not in label_index.keys():
+          label_index[item] = 1
+      
       while q.empty():
         start_time = time.time()
         frame, _, pcd_ = self.get_rgb_depth(self.cam, get_rgb=True, get_depth=True, get_pcd=True)
@@ -163,8 +168,17 @@ class LMP_interface():
             obj_points = np.asarray(pcd_downsampled.points)
             obj_normals = np.asarray(pcd_downsampled.normals)
 
-            state[label]= self.get_obs(obj_points, obj_normals, label)
-            # 获取bbox的中心坐标
+            obs = self.get_obs(obj_points, obj_normals, label)
+            # 如果物体已经存在，则将新的相同的物体设定为object1，object2，以此类推
+            if label in state.keys():
+              old_label = label
+              label = label + str(label_index[label])
+              obs["label"] = label
+              state[label] = obs
+              label_index[old_label] += 1
+            else:
+               state[label] = obs
+
             x_min, y_min, x_max, y_max = box
             center_x = (x_min + x_max) / 2
             center_y = (y_min + y_max) / 2
@@ -178,8 +192,7 @@ class LMP_interface():
         #print(state)
         write_state(state_json_path, state, lock)
         end_time = time.time()  # 记录结束时间
-        elapsed_time_ms = (end_time - start_time) * 1000  # 计算并转换为毫秒
-        print("update state success!"+f"Consumed time: {elapsed_time_ms:.2f} ms")
+        print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated object state in {end_time - start_time:.3f}s{bcolors.ENDC}")
         plt.axis('off')
         plt.draw()
         plt.savefig(f"tmp/masks/mask_{num}.jpeg", bbox_inches='tight', pad_inches=0)

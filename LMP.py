@@ -54,6 +54,8 @@ class LMP:
         if self._context :
             user_query = f"# Objects : {self._context}\n" + user_query
 
+        print(user_query)
+
         client = OpenAI(api_key=self.api_key,base_url=self.base_url)
         
         filepath = self.get_last_filename(self.image_path)
@@ -62,7 +64,7 @@ class LMP:
         completion = client.chat.completions.create(
             model=self._cfg['vision_model'],
             messages=[{"role": "user","content": [
-                {"type": "text","text": f"This is a robotic arm operation scene image.\n{planner_prompt}\nThe above are some examples of planning, please give the corresponding planning according to the image I gave you next:\n{user_query}. The output format likely is\n" + "planner : ['', '', '', '']\nOther than that, don't give me any superfluous information and hints"},
+                {"type": "text","text": f"This is a robotic arm operation scene image.\n{planner_prompt}\nThe above are some examples of planning, please give the corresponding planning according to the image I gave you next:\n{user_query}. The output format likely is\n" + "planner : ['', '', '', '']\nOther than that, don't give me any superfluous information and hints.The objects in the generated plan should match the names in the given image"},
                 {"type": "image_url",
                 "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}, 
                 }
@@ -252,6 +254,8 @@ class LMP:
                         break
                 for wp in trajectory:
                     self.shared_queue.put(wp)
+
+                print(self.shared_queue.qsize())
                 end_time = time.time()
                 print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated trajectory in {end_time - start_time:.3f}s{bcolors.ENDC}")
             else:
@@ -282,13 +286,9 @@ class LMP:
                     time.sleep(0.2)
                     continue
                 queue_list = list(self.shared_queue.queue)
-                print(len(queue_list))
-                if len(queue_list) < 2:
-                    update_stop_event.set()
-                
-                if len(queue_list) >= 2:
-                    curr_xyz = movable_var['_position_world']
-                    self.get_next_valid_waypoint(curr_xyz)
+
+                curr_xyz = movable_var['_position_world']
+                self.get_next_valid_waypoint(curr_xyz)
 
                 waypoint = self.shared_queue.get()
                 # check if the movement is finished
@@ -386,6 +386,7 @@ class LMP:
 
             if len(planning) == 0:
                 print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] finished all planning{bcolors.ENDC}")
+                time.sleep(1)
                 lmp_env.reset_to_default_pose()
                 break
 

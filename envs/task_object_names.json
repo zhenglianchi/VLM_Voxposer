@@ -1,5 +1,5 @@
 {
-    "put_rubbish_in_bin": [["bin", "bin"], ["rubbish", "rubbish"], ["tomato1", "tomato1"], ["tomato2", "tomato2"]],
+    "put_rubbish_in_bin": [["bin", "bin"], ["rubbish", "rubbish"], ["tomato", "tomato1"], ["tomato1", "tomato2"]],
     "lamp_off": [["lamp", "lamp_base"], ["button", "push_button_target"]],
     "open_wine_bottle": [["bottle", "bottle"], ["cap", "cap"]],
     "push_button": [["button", "push_button_target"]],

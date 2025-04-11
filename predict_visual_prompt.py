@@ -53,9 +53,8 @@ width,height = source_image.size
 imgsz = (height,width)
 
 result = model.predict(source_image, prompts=visuals, predictor=YOLOEVPSegPredictor,
-              return_vpe=True, save=False, verbose=False)
+              return_vpe=True, save=False, verbose=True)
 
 model.set_classes(["bin", "rubbish", "tomato"], model.predictor.vpe)
 model.predictor = None  # remove VPPredictor
-#result = model.predict(target_image, save=False, conf=0.5, iou=0.5, verbose=False, imgsz=imgsz)
-results = model.track("https://youtu.be/LNwODJXcvt4", show=True, tracker="bytetrack.yaml")
+result = model.predict(target_image, save=False, conf=0.5, iou=0.5, verbose=True, imgsz=imgsz, show=False)
