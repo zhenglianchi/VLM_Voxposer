@@ -207,6 +207,7 @@ class LMP:
             
     def __thread_update_traj(self, lmp_env, action_state, file_lock, update_stop_event, exec_stop_event):
         while not update_stop_event.is_set():
+            start_time = time.time()
             movable_var, affordance_map, avoidance_map, rotation_map, velocity_map, gripper_map, object_centric = self.get_update_map(action_state, file_lock, lmp_env)
             if affordance_map is not None:
                 # Preprocess avoidance map
@@ -251,6 +252,8 @@ class LMP:
                         break
                 for wp in trajectory:
                     self.shared_queue.put(wp)
+                end_time = time.time()
+                print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated trajectory in {end_time - start_time:.3f}s{bcolors.ENDC}")
             else:
                 print("Gripper manipulation, no need to update traj")
                 break
@@ -265,7 +268,7 @@ class LMP:
                 min_dist = dist
                 closest_idx = idx
         
-        for i in range(closest_idx):
+        for i in range(closest_idx+1):
             self.shared_queue.get()
 
 
@@ -279,6 +282,7 @@ class LMP:
                     time.sleep(0.2)
                     continue
                 queue_list = list(self.shared_queue.queue)
+                print(len(queue_list))
                 if len(queue_list) < 2:
                     update_stop_event.set()
                 
@@ -288,16 +292,17 @@ class LMP:
 
                 waypoint = self.shared_queue.get()
                 # check if the movement is finished
-                if np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0]) <= 0.01:
+                if np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0]) <= 0.02:
                     print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] reached last waypoint; curr_xyz={movable_var['_position_world']}, target={queue_list[-1][0]} (distance: {np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0]):.3f})){bcolors.ENDC}")
                     exec_stop_event.set()
+                    update_stop_event.set()
                     break
                 # skip waypoint if moving to this point is going in opposite direction of the final target point
                 # (for example, if you have over-pushed an object, no need to move back)
                 if i != 0 and i != len(queue_list) - 1:
                     movable2target = queue_list[-1][0] - movable_var['_position_world']
                     movable2waypoint = waypoint[0] - movable_var['_position_world']
-                    if np.dot(movable2target, movable2waypoint).round(3) <= 0:
+                    if np.dot(movable2target, movable2waypoint).round(3) < 0:
                         print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] skip waypoint {i+1} because it is moving in opposite direction of the final target{bcolors.ENDC}')
                         continue
                 # execute waypoint
@@ -338,15 +343,23 @@ class LMP:
     def __call__(self, query, file_lock, lmp_env):
         planning = self.generate_planning(query)
         planning_ = planning.copy()
+        update_stop_event = threading.Event()
+        exec_stop_event = threading.Event()
         while len(planning) >= 0:
             action = planning.pop(0)
+            action_state = None
+            filenames = os.listdir("cache")
+            for filename in filenames:
+                action_temp = json.load(open(os.path.join("cache", filename), "r"))
+                if action_temp["Action"] == action:
+                    print(f"using cache {filename}")
+                    action_state = action_temp
+                    break
             print(f"Action: {action}")
-            filepath = self.get_last_filename(self.mask_path)
-            action_state  = self._vlmapi_call(filepath, query=query, planner=planning_, action=action, objects=self._context)
+            if action_state is None:
+                filepath = self.get_last_filename(self.mask_path)
+                action_state  = self._vlmapi_call(filepath, query=query, planner=planning_, action=action, objects=self._context)
             print(action_state)
-
-            update_stop_event = threading.Event()
-            exec_stop_event = threading.Event()
 
             # 启动更新路径的线程
             update_thread = threading.Thread(target=self.__thread_update_traj, args=(lmp_env, action_state, file_lock, update_stop_event,exec_stop_event, ))
@@ -360,6 +373,9 @@ class LMP:
 
             execute_thread.join()
             update_thread.join()
+
+            update_stop_event.clear()
+            exec_stop_event.clear()
 
             # Clear old queue and insert new trajectory
             while not self.shared_queue.empty():
