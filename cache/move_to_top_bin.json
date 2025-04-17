@@ -20,8 +20,7 @@
         "set": "default"
         }, 
     "rotation": {
-        "object": "bin", "target_rotation": "vec2quat(-object['normal'])", 
-        "set": "rotation_map[:, :, :] = target_rotation"
+        "set": "default"
         }, 
     "velocity": {
         "set": "default"

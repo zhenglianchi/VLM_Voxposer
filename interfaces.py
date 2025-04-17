@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 import matplotlib
 import json_numpy
 import os
+from scipy.spatial.transform import Rotation as R
+from grasp_module import infer_grasps
 matplotlib.use('Agg')
 
 json_numpy.patch()
@@ -123,18 +125,25 @@ class LMP_interface():
       visuals,classes,label2id,id2label = process_visual_prompt(bbox_entities)
       set_visual_prompt(frame, visuals, classes)
       num = 0
-      label_index = {}
-      for item in classes:
-        if item not in label_index.keys():
-          label_index[item] = 1
-      
       while q.empty():
         start_time = time.time()
-        frame, _, pcd_ = self.get_rgb_depth(self.cam, get_rgb=True, get_depth=True, get_pcd=True)
+        label_index = {}
+        for item in classes:
+          if item not in label_index.keys():
+            label_index[item] = 1
+        frame, depth, pcd_ = self.get_rgb_depth(self.cam, get_rgb=True, get_depth=True, get_pcd=True)
         plt.clf()
         plt.imshow(frame)
         boxes, masks = predict_mask(frame)
         for (box_ent, mask) in zip(boxes, masks):
+            color = np.array(frame.copy(), dtype=np.float32) / 255.0
+            depth = np.array(depth)
+            workspace_mask = mask.astype(bool)
+            intrinsic = self.cam.get_intrinsic_matrix()
+            factor_depth = 0.1
+
+            infer_grasps(color, depth, workspace_mask, intrinsic, factor_depth)
+
             points, masks, normals = [], [], []
             box = box_ent[:4]
             conf = box_ent[4]
@@ -144,6 +153,7 @@ class LMP_interface():
             h, w = mask.shape[-2:]
             show_mask(mask,plt.gca())
             mask =  mask.reshape(h, w).reshape(-1)
+
             masks.append(mask)
             # estimate normals using o3d
             pcd = o3d.geometry.PointCloud()

@@ -1,0 +1,4 @@
+# ninja log v5
+1	1037	1744893825326793600	/media/zlc/Data/Embodied_AI/VLM_Voxposer/graspnet-baseline/knn/build/temp.linux-x86_64-3.9/media/zlc/Data/Embodied_AI/VLM_Voxposer/graspnet-baseline/knn/src/cuda/knn.o	366b17b648c8d6fa
+1	19003	1744893843284682500	/media/zlc/Data/Embodied_AI/VLM_Voxposer/graspnet-baseline/knn/build/temp.linux-x86_64-3.9/media/zlc/Data/Embodied_AI/VLM_Voxposer/graspnet-baseline/knn/src/cpu/knn_cpu.o	c11a3bec51b95248
+1	19565	1744893843848079400	/media/zlc/Data/Embodied_AI/VLM_Voxposer/graspnet-baseline/knn/build/temp.linux-x86_64-3.9/media/zlc/Data/Embodied_AI/VLM_Voxposer/graspnet-baseline/knn/src/vision.o	f954abb3a33bc8ed

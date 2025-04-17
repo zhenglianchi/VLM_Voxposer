@@ -39,12 +39,9 @@ class CustomMoveArmThenGripper(MoveArmThenGripper):
         self._prev_arm_action = arm_action.copy()
 
 class VoxPoserRLBench():
-    def __init__(self, visualizer=None):
+    def __init__(self):
         """
         Initializes the VoxPoserRLBench environment.
-
-        Args:
-            visualizer: Visualization interface, optional.
         """
         action_mode = CustomMoveArmThenGripper(arm_action_mode=EndEffectorPoseViaPlanning(),
                                         gripper_action_mode=Discrete())
@@ -55,9 +52,6 @@ class VoxPoserRLBench():
 
         self.workspace_bounds_min = np.array([self.rlbench_env._scene._workspace_minx, self.rlbench_env._scene._workspace_miny, self.rlbench_env._scene._workspace_minz])
         self.workspace_bounds_max = np.array([self.rlbench_env._scene._workspace_maxx, self.rlbench_env._scene._workspace_maxy, self.rlbench_env._scene._workspace_maxz])
-        self.visualizer = visualizer
-        if self.visualizer is not None:
-            self.visualizer.update_bounds(self.workspace_bounds_min, self.workspace_bounds_max)
         #self.camera_names = ['front', 'left_shoulder', 'right_shoulder', 'overhead', 'wrist']
         self.camera_names = ['front']
         # calculate lookat vector for all cameras (for normal estimation)
@@ -77,6 +71,7 @@ class VoxPoserRLBench():
         }
         self.name2cam = name2cam
         self.name2cam_mask = name2cam_mask
+        # 这里的0 0 1是当前相机的forward向量，即在相机坐标系下的Z轴正方向
         forward_vector = np.array([0, 0, 1])
         self.lookat_vectors = {}
         for cam_name in self.camera_names:
@@ -86,6 +81,8 @@ class VoxPoserRLBench():
             name2cam_mask[cam_name].set_perspective_angle(60)
 
             extrinsics = name2cam[cam_name].get_matrix()
+
+            #乘转换矩阵变换为世界坐标系下的forward向量
             lookat = extrinsics[:3, :3] @ forward_vector
             self.lookat_vectors[cam_name] = normalize_vector(lookat)
         # load file containing object names for each task
@@ -241,8 +238,7 @@ class VoxPoserRLBench():
 
     def reset(self):
         """
-        Resets the environment and the task. Also updates the visualizer.
-
+        Resets the environment and the task.
         Returns:
             tuple: A tuple containing task descriptions and initial observations.
         """
@@ -252,7 +248,6 @@ class VoxPoserRLBench():
         obs = self._process_obs(obs)
         self.init_obs = obs
         self.latest_obs = obs
-        self._update_visualizer()
         return descriptions, obs
 
     def apply_action(self, action):
@@ -273,7 +268,6 @@ class VoxPoserRLBench():
         self.latest_reward = reward
         self.latest_terminate = terminate
         self.latest_action = action
-        self._update_visualizer()
         grasped_objects = self.rlbench_env._scene.robot.gripper.get_grasped_objects()
         if len(grasped_objects) > 0:
             self.grasped_obj_ids = [obj.get_handle() for obj in grasped_objects]
@@ -377,16 +371,6 @@ class VoxPoserRLBench():
         self.obj_mask_ids = None
         self.name2ids = {}  # first_generation name -> list of ids of the tree
         self.id2name = {}  # any node id -> first_generation name
-   
-    def _update_visualizer(self):
-        """
-        Updates the scene in the visualizer with the latest observations.
-
-        Note: This function is generally called internally.
-        """
-        if self.visualizer is not None:
-            points, colors = self.get_scene_3d_obs(ignore_robot=False, ignore_grasped_obj=False)
-            self.visualizer.update_scene_points(points, colors)
     
     def _process_obs(self, obs):
         """

@@ -14,7 +14,7 @@ import re
 from ultralytics import YOLOE
 from ultralytics.models.yolo.yoloe.predict_vp import YOLOEVPSegPredictor
 
-model = YOLOE("yoloe-11s-seg.pt")
+model = YOLOE("yoloe-11s-seg.pt").cuda()
 
 def process_visual_prompt(bbox_entities):
     bbox = np.array([item["bbox"] for item in bbox_entities])

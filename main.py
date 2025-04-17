@@ -1,6 +1,5 @@
 from arguments import get_config
 from interfaces import setup_LMP
-from visualizers import ValueMapVisualizer
 from envs.rlbench_env import VoxPoserRLBench
 from utils import set_lmp_objects
 import numpy as np
@@ -12,16 +11,15 @@ import time
 import queue
 import shutil 
 
+
 #load config
 config_path = "configs/vlm_rlbench_config.yaml"
 config = get_config(config_path=config_path)
 
-#Initializes Vox map visualizer
-visualizer = ValueMapVisualizer(config['visualizer'])
 
 #Initializes the VoxPoserRLBench environment.
 #launch rlbench environment
-env = VoxPoserRLBench(visualizer=visualizer)
+env = VoxPoserRLBench()
 
 #Initializes LMPs
 lmps, lmp_env = setup_LMP(env, config, debug=False)
@@ -61,7 +59,7 @@ def update_state(file_lock,q):
 def run_voxposer_ui(instruction,file_lock,lmp_env,q):
     voxposer_ui(instruction,file_lock,lmp_env)
     q.put(0)
-    
+
 
 thread1 = threading.Thread(target=update_state, args=(file_lock,q,))
 thread2 = threading.Thread(target=run_voxposer_ui, args=(instruction,file_lock,lmp_env,q,))
@@ -69,6 +67,11 @@ thread2 = threading.Thread(target=run_voxposer_ui, args=(instruction,file_lock,l
 thread1.start()
 while not os.path.exists(config["json_path"]):
     time.sleep(1)
+
+
 thread2.start()
 thread2.join()
 thread1.join()
+
+
+

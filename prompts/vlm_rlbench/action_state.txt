@@ -60,7 +60,7 @@ Some external library APIs:
     },
     "rotation": {
         "object":"blue_block",
-        "target_rotation":"vec2quat(-object['normal'])",
+        "target_rotation":"object['grasp_quat']",
         "set":"rotation_map[:, :, :] = target_rotation"
     },
     "velocity": {
@@ -100,9 +100,7 @@ Some external library APIs:
         "set":"default"
     },
     "rotation": {
-        "object":"yellow_block",
-        "target_rotation":"vec2quat(-object['normal'])",
-        "set":"rotation_map[:, :, :] = target_rotation"
+        "set": "default"
     },
     "velocity": {
         "set":"default"
@@ -164,7 +162,7 @@ Some external library APIs:
     },
     "rotation": {
         "object":"steak",
-        "target_rotation":"vec2quat(-object['normal'])",
+        "target_rotation":"object['grasp_quat']",
         "set":"rotation_map[:, :, :] = target_rotation"
     },
     "velocity": {
@@ -195,9 +193,7 @@ Some external library APIs:
         "set":"default"
     },
     "rotation": {
-        "object":"plate",
-        "target_rotation":"vec2quat(-object['normal'])",
-        "set":"rotation_map[:, :, :] = target_rotation"
+        "set": "default"
     },
     "velocity": {
         "set":"default"

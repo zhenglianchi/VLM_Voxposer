@@ -58,7 +58,7 @@ class LMP:
 
         client = OpenAI(api_key=self.api_key,base_url=self.base_url)
         
-        filepath = self.get_last_filename(self.image_path)
+        filepath = self.get_last_filename(self.mask_path)
         base64_image = encode_image(filepath)
 
         completion = client.chat.completions.create(
@@ -165,9 +165,9 @@ class LMP:
     
     def __get__rotation_map(self,action_state,lmp_env,object_state):
         rotation_map = lmp_env._get_default_voxel_map('rotation')()
-        rotation = action_state["rotation"]
+        '''rotation = action_state["rotation"]
         rotation_set = rotation["set"]
-        '''if rotation_set != "default" :
+        if rotation_set != "default" :
                 rotation_var = action_state["rotation"]["object"]
                 if rotation_var not in object_state.keys():
                     print(f"Object {rotation_var} not found in scene in this step.")
