@@ -6,11 +6,6 @@ import os
 import sys
 import numpy as np
 import open3d as o3d
-import argparse
-import importlib
-import scipy.io as scio
-from PIL import Image
-
 import torch
 from graspnetAPI import GraspGroup
 
@@ -23,26 +18,24 @@ from graspnet import GraspNet, pred_decode
 from collision_detector import ModelFreeCollisionDetector
 from data_utils import CameraInfo, create_point_cloud_from_depth_image
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--checkpoint_path', default='checkpoint-rs.tar', help='Model checkpoint path')
-parser.add_argument('--num_point', type=int, default=20000, help='Point Number [default: 20000]')
-parser.add_argument('--num_view', type=int, default=300, help='View Number [default: 300]')
-parser.add_argument('--collision_thresh', type=float, default=0.01, help='Collision Threshold in collision detection [default: 0.01]')
-parser.add_argument('--voxel_size', type=float, default=0.01, help='Voxel Size to process point clouds before collision detection [default: 0.01]')
-cfgs = parser.parse_args()
+CHECKPOINT_PATH = 'checkpoint-rs.tar'
+NUM_POINT = 20000
+NUM_VIEW = 300
+COLLISION_THRESH = 0.01
+VOXEL_SIZE = 0.01
 
 
 def get_net():
     # Init the model
-    net = GraspNet(input_feature_dim=0, num_view=cfgs.num_view, num_angle=12, num_depth=4,
+    net = GraspNet(input_feature_dim=0, num_view=NUM_VIEW, num_angle=12, num_depth=4,
             cylinder_radius=0.05, hmin=-0.02, hmax_list=[0.01,0.02,0.03,0.04], is_training=False)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     net.to(device)
     # Load checkpoint
-    checkpoint = torch.load(cfgs.checkpoint_path)
+    checkpoint = torch.load(CHECKPOINT_PATH)
     net.load_state_dict(checkpoint['model_state_dict'])
     start_epoch = checkpoint['epoch']
-    print("-> loaded checkpoint %s (epoch: %d)"%(cfgs.checkpoint_path, start_epoch))
+    print("-> loaded checkpoint %s (epoch: %d)"%(CHECKPOINT_PATH, start_epoch))
     # set model to eval mode
     net.eval()
     return net
@@ -66,11 +59,11 @@ def get_and_process_data(color,depth,workspace_mask,intrinsic,factor_depth):
     color_masked = color[mask]
 
     # sample points
-    if len(cloud_masked) >= cfgs.num_point:
-        idxs = np.random.choice(len(cloud_masked), cfgs.num_point, replace=False)
+    if len(cloud_masked) >= NUM_POINT:
+        idxs = np.random.choice(len(cloud_masked), NUM_POINT, replace=False)
     else:
         idxs1 = np.arange(len(cloud_masked))
-        idxs2 = np.random.choice(len(cloud_masked), cfgs.num_point-len(cloud_masked), replace=True)
+        idxs2 = np.random.choice(len(cloud_masked), NUM_POINT-len(cloud_masked), replace=True)
         idxs = np.concatenate([idxs1, idxs2], axis=0)
     cloud_sampled = cloud_masked[idxs]
     color_sampled = color_masked[idxs]
@@ -98,15 +91,15 @@ def get_grasps(net, end_points):
     return gg
 
 def collision_detection(gg, cloud):
-    mfcdetector = ModelFreeCollisionDetector(cloud, voxel_size=cfgs.voxel_size)
-    collision_mask = mfcdetector.detect(gg, approach_dist=0.05, collision_thresh=cfgs.collision_thresh)
+    mfcdetector = ModelFreeCollisionDetector(cloud, voxel_size=VOXEL_SIZE)
+    collision_mask = mfcdetector.detect(gg, approach_dist=0.05, collision_thresh=COLLISION_THRESH)
     gg = gg[~collision_mask]
     return gg
 
 def vis_grasps(gg, cloud):
     gg.nms()
     gg.sort_by_score()
-    gg = gg[:50]
+    gg = gg[:1]
     grippers = gg.to_open3d_geometry_list()
     o3d.visualization.draw_geometries([cloud, *grippers])
 
@@ -114,6 +107,10 @@ def infer_grasps(color,depth,workspace_mask,intrinsic,factor_depth):
     net = get_net()
     end_points, cloud = get_and_process_data(color,depth,workspace_mask,intrinsic,factor_depth)
     gg = get_grasps(net, end_points)
-    if cfgs.collision_thresh > 0:
+    if COLLISION_THRESH > 0:
         gg = collision_detection(gg, np.array(cloud.points))
     vis_grasps(gg, cloud)
+    gg.nms()
+    gg.sort_by_score()
+    gg = gg[:50]
+    return gg

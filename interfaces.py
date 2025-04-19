@@ -140,9 +140,31 @@ class LMP_interface():
             depth = np.array(depth)
             workspace_mask = mask.astype(bool)
             intrinsic = self.cam.get_intrinsic_matrix()
-            factor_depth = 0.1
+            factor_depth = 1
+            R_adjust = np.array([
+               [0, -1, 0], #X轴旋转到-Y轴
+               [1, 0, 0],  #Y轴旋转到X轴
+               [0, 0, 1]   #Z轴不变
+               ])
 
-            infer_grasps(color, depth, workspace_mask, intrinsic, factor_depth)
+            gg = infer_grasps(color, depth, workspace_mask, intrinsic, factor_depth)
+            gg_final = gg[0]
+            rotation_matrix = np.dot(gg_final.rotation_matrix, R_adjust)
+            translation = gg_final.translation
+            print("rotation_matrix:\n", rotation_matrix)
+            print("translation:\n", translation)
+            T_world2cam = self.cam.get_matrix()
+            print("T_world2cam:\n", T_world2cam)
+            T_cam2world = np.linalg.inv(T_world2cam)
+            T_grasp2cam = np.eye(4)
+            T_grasp2cam[:3, :3] = rotation_matrix
+            T_grasp2cam[:3, 3] = translation
+            T_grasp2world = np.dot(T_cam2world, T_grasp2cam)
+            rotation_matrix = R.from_matrix(T_grasp2world[:3, :3])
+            translation = T_grasp2world[:3, 3]
+            print("converted rotation_matrix:\n", rotation_matrix.as_matrix())
+            print("converted translation:\n", translation)
+            print("converted eepos:\n",self._env.get_ee_pos())
 
             points, masks, normals = [], [], []
             box = box_ent[:4]
