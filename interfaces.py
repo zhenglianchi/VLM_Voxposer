@@ -136,41 +136,62 @@ class LMP_interface():
         plt.imshow(frame)
         boxes, masks = predict_mask(frame)
         for (box_ent, mask) in zip(boxes, masks):
-            color = np.array(frame.copy(), dtype=np.float32) / 255.0
-            depth = np.array(depth)
-            workspace_mask = mask.astype(bool)
-            intrinsic = self.cam.get_intrinsic_matrix()
-            factor_depth = 1
-            R_adjust = np.array([
-               [0, -1, 0], #X轴旋转到-Y轴
-               [1, 0, 0],  #Y轴旋转到X轴
-               [0, 0, 1]   #Z轴不变
-               ])
-
-            gg = infer_grasps(color, depth, workspace_mask, intrinsic, factor_depth)
-            gg_final = gg[0]
-            rotation_matrix = np.dot(gg_final.rotation_matrix, R_adjust)
-            translation = gg_final.translation
-            print("rotation_matrix:\n", rotation_matrix)
-            print("translation:\n", translation)
-            T_world2cam = self.cam.get_matrix()
-            print("T_world2cam:\n", T_world2cam)
-            T_cam2world = np.linalg.inv(T_world2cam)
-            T_grasp2cam = np.eye(4)
-            T_grasp2cam[:3, :3] = rotation_matrix
-            T_grasp2cam[:3, 3] = translation
-            T_grasp2world = np.dot(T_cam2world, T_grasp2cam)
-            rotation_matrix = R.from_matrix(T_grasp2world[:3, :3])
-            translation = T_grasp2world[:3, 3]
-            print("converted rotation_matrix:\n", rotation_matrix.as_matrix())
-            print("converted translation:\n", translation)
-            print("converted eepos:\n",self._env.get_ee_pos())
-
+            id = int(box_ent[5])
+            label = id2label[id]
             points, masks, normals = [], [], []
             box = box_ent[:4]
             conf = box_ent[4]
-            id = int(box_ent[5])
-            label = id2label[id]
+            print("label:",label)
+            if label == "rubbish":
+              color = np.array(frame.copy(), dtype=np.float32) / 255.0
+              depth = np.array(depth)
+              workspace_mask = mask.astype(bool)
+              intrinsic = self.cam.get_intrinsic_matrix()
+              factor_depth = 0.1
+
+              gg = infer_grasps(color, depth, workspace_mask, intrinsic, factor_depth)
+              gg_final = gg[0]
+              T_gg_grasp = np.eye(4)
+              T_gg_grasp[:3, :3] = gg_final.rotation_matrix
+              T_gg_grasp[:3, 3] = gg_final.translation
+              #print("T_gg_grasp:\n",T_gg_grasp)
+
+              T_grasp2cam = np.eye(4)
+              #print("T_grasp2cam:\n",T_grasp2cam)
+
+              T_gg_cam = T_grasp2cam @ T_gg_grasp
+              print("T_gg2cam:\n",T_gg_cam)
+
+              '''
+              # 测试graspnet坐标轴方向,graspnet坐标系定义
+              # x->right,y->buttom,z->forward
+              print("夹爪坐标系下\n",gg_final.translation)
+
+              T_cam2world = self.cam.get_matrix()
+              print("相机外参矩阵:")
+              print(T_cam2world)
+              #这里测试相机坐标系y=1时转换到世界坐标系下的坐标
+              print("相机坐标系y=1时转换到世界坐标系下的坐标")
+              # y->top
+              print(T_cam2world @ np.array([0,1,0,1]))
+              print("相机坐标系x=1时转换到世界坐标系下的坐标")
+              # x->left 
+              print(T_cam2world @ np.array([1,0,0,1]))
+              print("相机坐标系z=1时转换到世界坐标系下的坐标")
+              # z->forward
+              print(T_cam2world @ np.array([0,0,1,1]))
+              print("相机坐标系原点转换到世界坐标系下的坐标")
+              print(T_cam2world @ np.array([0,0,0,1]))
+              '''
+              
+              T_cam2world = self.cam.get_matrix()
+              T_grasp2world = T_cam2world @ T_gg_cam
+              
+              rotation_matrix = R.from_matrix(T_grasp2world[:3, :3])
+              translation = T_grasp2world[:3, 3]
+              print("converted rotation_matrix:\n", rotation_matrix.as_matrix())
+              print("converted translation:\n", translation)
+
             points.append(pcd_.reshape(-1, 3))
             h, w = mask.shape[-2:]
             show_mask(mask,plt.gca())
