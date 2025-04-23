@@ -12,6 +12,8 @@ Variable Descriptions:
     obs_dict["_position_world"] # The _position_world represents the center of the object in the world frame
     obs_dict["_point_cloud_world"] # The _point_cloud_world represents its original point cloud map in the world frame
     obs_dict["normal"] # The normal represents the mean surface normal of the object in the world frame
+    obs_dict["translation"] # grasnpnet generated grasp translation in the world frame
+    obs_dict["quat"] # grasnpnet generated grasp quat in the world frame
 
 Function Descriptions:
     Function cm2index(cm, direction): Used to convert centimeters to voxel indices.
@@ -60,7 +62,7 @@ Some external library APIs:
     },
     "rotation": {
         "object":"blue_block",
-        "target_rotation":"object['grasp_quat']",
+        "target_rotation":"object['quat']",
         "set":"rotation_map[:, :, :] = target_rotation"
     },
     "velocity": {
@@ -91,7 +93,8 @@ Some external library APIs:
         "(min_x, min_y, min_z), (max_x, max_y, max_z)":"object['aabb']",
         "x":"center_x",
         "y":"center_y",
-        "z":"center_z",
+        "z":"center_z",object = object_state[rotation_var]["obs"]
+                target_rotation = eval(rotation["quat"])
         "radius_cm": 2,
         "value":1,
         "set":"set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm, value)"
@@ -162,7 +165,7 @@ Some external library APIs:
     },
     "rotation": {
         "object":"steak",
-        "target_rotation":"object['grasp_quat']",
+        "target_rotation":"object['quat']",
         "set":"rotation_map[:, :, :] = target_rotation"
     },
     "velocity": {
@@ -217,7 +220,7 @@ Some external library APIs:
     },
     "rotation": {
         "object":"plate",
-        "target_rotation":"qmult(vec2quat(-object['normal']), euler2quat(-np.pi / 4, 0, 0))",
+        "target_rotation":"object['quat']",
         "set":"rotation_map[:, :, :] = target_rotation"
     },
     "velocity": {

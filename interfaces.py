@@ -59,7 +59,7 @@ class LMP_interface():
     return rgb, depth, pcd, meter_depth
 
 
-  def get_obs(self, obj_pc,obj_normal, label):
+  def get_obs(self, obj_pc,obj_normal, label, grasp_pose):
     obs_dict = dict()
     voxel_map = self._points_to_voxel_map(obj_pc)
     aabb_min = self._world_to_voxel(np.min(obj_pc, axis=0))
@@ -71,6 +71,8 @@ class LMP_interface():
     obs_dict['_position_world'] = np.mean(obj_pc, axis=0)  # in world frame
     obs_dict['_point_cloud_world'] = obj_pc  # in world frame
     obs_dict['normal'] = normalize_vector(obj_normal.mean(axis=0))
+    obs_dict['translation'] = grasp_pose["translation"]
+    obs_dict['quat'] = grasp_pose["quat"]
 
     object_obs = {"obs":Observation(obs_dict)}
     return object_obs
@@ -114,6 +116,22 @@ class LMP_interface():
     bbox = get_world_bboxs_list(image_path, objects)
     return rgb, bbox
 
+  def quaternion_distance_angle(self, q1, q2):
+    """
+    计算两个四元数的角度距离（最小旋转角度）
+    :param q1: 第一个四元数 [w, x, y, z]
+    :param q2: 第二个四元数 [w, x, y, z]
+    :return: 角度距离（弧度制）
+    """
+    # 计算四元数内积
+    dot_product = np.dot(q1, q2)
+    # 取绝对值以处理 q 和 -q 的等价性
+    cos_phi = np.abs(dot_product)
+    # 防止数值误差导致 cos_phi 超出 [-1, 1] 范围
+    cos_phi = np.clip(cos_phi, -1.0, 1.0)
+    # 计算角度距离
+    angle_distance = 2 * np.arccos(cos_phi)
+    return angle_distance
 
   def update_mask_entities(self,lock,q):
       if not os.path.exists("tmp/images"):
@@ -143,65 +161,42 @@ class LMP_interface():
             points, masks, normals = [], [], []
             box = box_ent[:4]
             conf = box_ent[4]
-            if label == "rubbish":
-              print("label:",label)
-              color = np.array(frame.copy(), dtype=np.float32) / 255.0
-              meter_depth = np.array(meter_depth)
-              workspace_mask = mask.astype(bool)
-              intrinsic = self.cam.get_intrinsic_matrix()
-              factor_depth = 1
 
-              gg = infer_grasps(color, meter_depth, workspace_mask, intrinsic, factor_depth)
-              gg_final = gg[0]
+            #print("label:",label)
+            color = np.array(frame.copy(), dtype=np.float32) / 255.0
+            meter_depth = np.array(meter_depth)
+            workspace_mask = mask.astype(bool)
+            intrinsic = self.cam.get_intrinsic_matrix()
+            factor_depth = 1
+
+            gg = infer_grasps(color, meter_depth, workspace_mask, intrinsic, factor_depth)
+            min_gg = 100
+            grasp_pose = None
+            for gg_final in gg:
               T_gg_grasp = np.eye(4)
               T_gg_grasp[:3, :3] = gg_final.rotation_matrix
               T_gg_grasp[:3, 3] = gg_final.translation
-              #print("T_gg_grasp:\n",T_gg_grasp)
 
               T_grasp2cam = np.eye(4)
-              #print("T_grasp2cam:\n",T_grasp2cam)
 
               T_gg_cam = T_grasp2cam @ T_gg_grasp
-              print("T_gg2cam:\n",T_gg_cam)
-
-              '''
-              # 测试graspnet坐标轴方向,graspnet坐标系定义
-              # x->right,y->buttom,z->forward
-              print("夹爪坐标系下\n",gg_final.translation)
-
-              T_cam2world = self.cam.get_matrix()
-              print("相机外参矩阵:")
-              print(T_cam2world)
-              #这里测试相机坐标系y=1时转换到世界坐标系下的坐标
-              print("相机坐标系y=1时转换到世界坐标系下的坐标")
-              # y->top
-              print(T_cam2world @ np.array([0,1,0,1]))
-              print("相机坐标系x=1时转换到世界坐标系下的坐标")
-              # x->left 
-              print(T_cam2world @ np.array([1,0,0,1]))
-              print("相机坐标系z=1时转换到世界坐标系下的坐标")
-              # z->forward
-              print(T_cam2world @ np.array([0,0,1,1]))
-              print("相机坐标系原点转换到世界坐标系下的坐标")
-              print(T_cam2world @ np.array([0,0,0,1]))
-              '''
               
               T_cam2world = self.cam.get_matrix()
               T_grasp2world = T_cam2world @ T_gg_cam
               
               rotation_matrix = R.from_matrix(T_grasp2world[:3, :3])
+              quat = rotation_matrix.as_quat()
               translation = T_grasp2world[:3, 3]
-              print("converted rotation_matrix:\n", rotation_matrix.as_matrix())
-              print("converted quat:\n",rotation_matrix.as_quat())
-              print("converted translation:\n", translation)
-              print("workspace_bounds_min:",self._env.workspace_bounds_min)
-              print("workspace_bounds_max:",self._env.workspace_bounds_max)
-              time.sleep(1)
-              pose = translation.tolist() + self._env.get_ee_quat().tolist()
-              print("pose:\n",pose)
-              self._env.move_to_pose(pose)
-              time.sleep(50)
-
+              ee_current_quat = self._env.get_ee_quat()
+              angle_distance = self.quaternion_distance_angle(quat, ee_current_quat)
+              if angle_distance < min_gg:
+                 min_gg = angle_distance
+                 grasp_pose = {
+                    "translation": translation,
+                    "quat": quat
+                 }
+              #print(f"angle_distance: {angle_distance}")
+              
             points.append(pcd_.reshape(-1, 3))
             h, w = mask.shape[-2:]
             show_mask(mask,plt.gca())
@@ -231,7 +226,7 @@ class LMP_interface():
             obj_points = np.asarray(pcd_downsampled.points)
             obj_normals = np.asarray(pcd_downsampled.normals)
 
-            obs = self.get_obs(obj_points, obj_normals, label)
+            obs = self.get_obs(obj_points, obj_normals, label, grasp_pose)
             # 如果物体已经存在，则将新的相同的物体设定为object1，object2，以此类推
             if label in state.keys():
               old_label = label

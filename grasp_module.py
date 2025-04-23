@@ -97,9 +97,6 @@ def collision_detection(gg, cloud):
     return gg
 
 def vis_grasps(gg, cloud):
-    gg.nms()
-    gg.sort_by_score()
-    gg = gg[:1]
     grippers = gg.to_open3d_geometry_list()
     o3d.visualization.draw_geometries([cloud, *grippers])
 
@@ -109,8 +106,8 @@ def infer_grasps(color,depth,workspace_mask,intrinsic,factor_depth):
     gg = get_grasps(net, end_points)
     if COLLISION_THRESH > 0:
         gg = collision_detection(gg, np.array(cloud.points))
-    vis_grasps(gg, cloud)
     gg.nms()
     gg.sort_by_score()
-    gg = gg[:50]
+    gg = gg[:10]
+    #vis_grasps(gg, cloud)
     return gg

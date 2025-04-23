@@ -165,7 +165,7 @@ class LMP:
     
     def __get__rotation_map(self,action_state,lmp_env,object_state):
         rotation_map = lmp_env._get_default_voxel_map('rotation')()
-        '''rotation = action_state["rotation"]
+        rotation = action_state["rotation"]
         rotation_set = rotation["set"]
         if rotation_set != "default" :
                 rotation_var = action_state["rotation"]["object"]
@@ -174,7 +174,7 @@ class LMP:
                     pass
                 object = object_state[rotation_var]["obs"]
                 target_rotation = eval(rotation["target_rotation"])
-                rotation_map[:, :, :] = target_rotation'''
+                rotation_map[:, :, :] = target_rotation
         return rotation_map
     
     def __get__velocity_map(self,action_state,lmp_env,object_state):
