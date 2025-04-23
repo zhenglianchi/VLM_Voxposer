@@ -13,6 +13,7 @@ import matplotlib
 import json_numpy
 import os
 from scipy.spatial.transform import Rotation as R
+import time
 from grasp_module import infer_grasps
 matplotlib.use('Agg')
 
@@ -38,7 +39,7 @@ class LMP_interface():
   # ======================================================
 
   def get_rgb_depth(self, sensor=None, get_rgb=True, get_depth=True,get_pcd=True):
-    rgb = depth = pcd = None
+    rgb = depth = pcd = meter_depth = None
     if sensor is not None and (get_rgb or get_depth):
         sensor.handle_explicitly()
         if get_rgb:
@@ -46,6 +47,7 @@ class LMP_interface():
             rgb = Image.fromarray(np.clip((rgb * 255.).astype(np.uint8), 0, 255)).convert("RGB")
         if get_depth or get_pcd:
             depth = sensor.capture_depth(False)
+            meter_depth = sensor.capture_depth(True)
         if get_pcd:
             depth_m = depth
             near = sensor.get_near_clipping_plane()
@@ -54,7 +56,7 @@ class LMP_interface():
             pcd = sensor.pointcloud_from_depth(depth_m)
             if not get_depth:
                 depth = None
-    return rgb, depth, pcd
+    return rgb, depth, pcd, meter_depth
 
 
   def get_obs(self, obj_pc,obj_normal, label):
@@ -104,7 +106,7 @@ class LMP_interface():
   
   
   def update_box(self):
-    rgb, _, _ = self.get_rgb_depth(self.cam, get_rgb=True, get_depth=False, get_pcd=False)
+    rgb, _, _, _ = self.get_rgb_depth(self.cam, get_rgb=True, get_depth=False, get_pcd=False)
     image = Image.fromarray(np.array(rgb))
     image_path = f"tmp/images/rgb.jpeg"
     image.save(image_path)
@@ -131,7 +133,7 @@ class LMP_interface():
         for item in classes:
           if item not in label_index.keys():
             label_index[item] = 1
-        frame, depth, pcd_ = self.get_rgb_depth(self.cam, get_rgb=True, get_depth=True, get_pcd=True)
+        frame, depth, pcd_, meter_depth = self.get_rgb_depth(self.cam, get_rgb=True, get_depth=True, get_pcd=True)
         plt.clf()
         plt.imshow(frame)
         boxes, masks = predict_mask(frame)
@@ -141,15 +143,15 @@ class LMP_interface():
             points, masks, normals = [], [], []
             box = box_ent[:4]
             conf = box_ent[4]
-            print("label:",label)
             if label == "rubbish":
+              print("label:",label)
               color = np.array(frame.copy(), dtype=np.float32) / 255.0
-              depth = np.array(depth)
+              meter_depth = np.array(meter_depth)
               workspace_mask = mask.astype(bool)
               intrinsic = self.cam.get_intrinsic_matrix()
-              factor_depth = 0.1
+              factor_depth = 1
 
-              gg = infer_grasps(color, depth, workspace_mask, intrinsic, factor_depth)
+              gg = infer_grasps(color, meter_depth, workspace_mask, intrinsic, factor_depth)
               gg_final = gg[0]
               T_gg_grasp = np.eye(4)
               T_gg_grasp[:3, :3] = gg_final.rotation_matrix
@@ -190,7 +192,15 @@ class LMP_interface():
               rotation_matrix = R.from_matrix(T_grasp2world[:3, :3])
               translation = T_grasp2world[:3, 3]
               print("converted rotation_matrix:\n", rotation_matrix.as_matrix())
+              print("converted quat:\n",rotation_matrix.as_quat())
               print("converted translation:\n", translation)
+              print("workspace_bounds_min:",self._env.workspace_bounds_min)
+              print("workspace_bounds_max:",self._env.workspace_bounds_max)
+              time.sleep(1)
+              pose = translation.tolist() + self._env.get_ee_quat().tolist()
+              print("pose:\n",pose)
+              self._env.move_to_pose(pose)
+              time.sleep(50)
 
             points.append(pcd_.reshape(-1, 3))
             h, w = mask.shape[-2:]
