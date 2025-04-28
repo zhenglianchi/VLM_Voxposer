@@ -37,14 +37,15 @@ Some external library APIs:
     "Planner" : ["grasp the blue block at a quarter of the speed while keeping at least 2cm away from the mug", "move to 2cm on top of the yellow block while keeping at least 2cm away from the mug", "open gripper"],
     "Action" : "grasp the blue block at a quarter of the speed",
     "movable" : "gripper",
-    "affordable" : {
+    "affordable" : {other
         "object":"blue_block",
-        "translation":"object['translation']",
-        "x": "translation[0]", 
-        "y": "translation[1]", 
-        "z": "translation[2]", 
+        "center_x, center_y, center_z":"object['position']",
+        "(min_x, min_y, min_z), (max_x, max_y, max_z)":"object['aabb']",
+        'x':'center_x',
+        'y':'center_y',
+        'z':'center_z',
         "target_affordance":1,
-        "set": "affordance_map[x, y, z] = 1",
+        "set":"affordance_map[x, y, z] = target_affordance",
         "move" : "grasp"
     },
     "avoid" : {
@@ -146,12 +147,13 @@ Some external library APIs:
     "movable" : "gripper",
     "affordable" : {
         "object":"steak",
-        "translation":"object['translation']",
-        "x": "translation[0]", 
-        "y": "translation[1]", 
-        "z": "translation[2]", 
+        "center_x, center_y, center_z":"object['position']",
+        "(min_x, min_y, min_z), (max_x, max_y, max_z)":"object['aabb']",
+        "x":"center_x",
+        "y":"center_y",
+        "z":"center_z",
         "target_affordance":1,
-        "set": "affordance_map[x, y, z] = 1",
+        "set":"affordance_map[x, y, z] = target_affordance",
         "move" : "grasp"
     },
     "avoid" : {

@@ -36,6 +36,7 @@ class LMP:
         self.base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
 
         self.shared_queue = queue.Queue()
+        self.quat_queue = queue.Queue()
 
     def get_last_filename(self,folder):
         while True:
@@ -91,7 +92,7 @@ class LMP:
         completion = client.chat.completions.create(
             model=self._cfg['vision_model'],  
             messages=[{"role": "user","content": [
-                    {"type": "text","text": f"This is a robotic arm operation scene." + f"The format of output should be like {prompt}.\n Objects : {objects}\nQuery : {query}\nPlanner : {planner}\nAction : {action}\nPlease just give me the corresponding json, no explanation and no text required"},
+                    {"type": "text","text": f"This is a robotic arm operation scene." + f"The format of output should be like {prompt}.\n Objects : {objects}\nMoves : [grasp,move],\nQuery : {query}\nPlanner : {planner}\nAction : {action}\nPlease just give me the corresponding json, no explanation and no text required"},
                     {"type": "image_url",
                     "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}, 
                     }
@@ -110,15 +111,20 @@ class LMP:
         affordable = action_state["affordable"]
         affordable_set = affordable["set"]
         if affordable_set != "default" :
+            move_mode = affordable["move"]
             affordable_map = lmp_env._get_default_voxel_map('target')()
             affordable_var = affordable["object"]
             object = object_state[affordable_var]["obs"]
-            center_x, center_y, center_z = eval(affordable["center_x, center_y, center_z"])
-            (min_x, min_y, min_z), (max_x, max_y, max_z) = eval(affordable["(min_x, min_y, min_z), (max_x, max_y, max_z)"])
+            if move_mode == "move":
+                center_x, center_y, center_z = eval(affordable["center_x, center_y, center_z"])
+                (min_x, min_y, min_z), (max_x, max_y, max_z) = eval(affordable["(min_x, min_y, min_z), (max_x, max_y, max_z)"])
+            if move_mode == "grasp":
+                translation = eval(affordable["translation"])
             x = eval(affordable["x"])
             y = eval(affordable["y"])
             z = eval(affordable["z"])
             target_affordance = affordable["target_affordance"]
+            # 这一步有bug，超出索引值
             affordable_map[x,y,z] = target_affordance
         return affordable_map
     
@@ -167,14 +173,19 @@ class LMP:
         rotation_map = lmp_env._get_default_voxel_map('rotation')()
         rotation = action_state["rotation"]
         rotation_set = rotation["set"]
-        if rotation_set != "default" :
-                rotation_var = action_state["rotation"]["object"]
-                if rotation_var not in object_state.keys():
-                    print(f"Object {rotation_var} not found in scene in this step.")
-                    pass
-                object = object_state[rotation_var]["obs"]
-                target_rotation = eval(rotation["target_rotation"])
-                rotation_map[:, :, :] = target_rotation
+        if rotation_set != "default" and self.quat_queue.empty():
+            rotation_var = action_state["rotation"]["object"]
+            if rotation_var not in object_state.keys():
+                print(f"Object {rotation_var} not found in scene in this step.")
+                pass
+            object = object_state[rotation_var]["obs"]
+            target_rotation = eval(rotation["target_rotation"])
+            current_rotation = lmp_env._env.get_ee_quat()
+            quat_traj = lmp_env.interpolate_quaternions(current_rotation.tolist(), target_rotation.tolist(), 9)
+            #rotation_map[:, :, :] = target_rotation
+            for wp in quat_traj:
+                self.quat_queue.put(wp)
+
         return rotation_map
     
     def __get__velocity_map(self,action_state,lmp_env,object_state):
@@ -228,7 +239,11 @@ class LMP:
                     voxel_xyz = path_voxel[i]
                     world_xyz = lmp_env._voxel_to_world(voxel_xyz)
                     voxel_xyz = np.round(voxel_xyz).astype(int)
-                    rotation = rotation_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]]
+                    if not self.quat_queue.empty():
+                        rotation = self.quat_queue.get().tolist()
+                        rotation_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]] = rotation
+                    else:
+                        rotation = lmp_env._env.get_ee_quat()
                     velocity = velocity_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]]
                     gripper = gripper_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]]
                     
@@ -291,6 +306,7 @@ class LMP:
                 self.get_next_valid_waypoint(curr_xyz)
 
                 waypoint = self.shared_queue.get()
+                print(waypoint)
                 # check if the movement is finished
                 if np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0]) <= 0.02:
                     print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] reached last waypoint; curr_xyz={movable_var['_position_world']}, target={queue_list[-1][0]} (distance: {np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0]):.3f})){bcolors.ENDC}")
